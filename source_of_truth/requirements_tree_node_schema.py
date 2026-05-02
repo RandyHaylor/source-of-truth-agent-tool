@@ -1,0 +1,128 @@
+"""Dataclasses + JSON schema for requirements-tree nodes (incl. project-paths node variant)."""
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from typing import Any, Optional
+
+PROJECT_PATHS_SPECIAL_NODE_KIND: str = "project_paths"
+QUOTE_REFERENCE_NODE_KIND: str = "quote_reference"
+
+
+@dataclass
+class RawEntryReference:
+    session_id: str
+    entry_id: str
+    char_range: Optional[list[int]] = None  # [start, end] inclusive
+
+    def to_json_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"session_id": self.session_id, "entry_id": self.entry_id}
+        if self.char_range is not None:
+            out["char_range"] = list(self.char_range)
+        return out
+
+    @classmethod
+    def from_json_dict(cls, raw: dict[str, Any]) -> "RawEntryReference":
+        return cls(
+            session_id=raw["session_id"],
+            entry_id=raw["entry_id"],
+            char_range=list(raw["char_range"]) if raw.get("char_range") is not None else None,
+        )
+
+
+@dataclass
+class RequirementsTreeNode:
+    node_id: int
+    parent_id: Optional[int]
+    kind: str  # QUOTE_REFERENCE_NODE_KIND or PROJECT_PATHS_SPECIAL_NODE_KIND
+    raw_entry_reference: Optional[RawEntryReference] = None  # required if kind=quote_reference
+    project_paths: list[str] = field(default_factory=list)    # only for project_paths node
+    child_node_ids: list[int] = field(default_factory=list)
+
+    def to_json_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "node_id": self.node_id,
+            "parent_id": self.parent_id,
+            "kind": self.kind,
+            "child_node_ids": list(self.child_node_ids),
+        }
+        if self.raw_entry_reference is not None:
+            out["raw_entry_reference"] = self.raw_entry_reference.to_json_dict()
+        if self.kind == PROJECT_PATHS_SPECIAL_NODE_KIND:
+            out["project_paths"] = list(self.project_paths)
+        return out
+
+    @classmethod
+    def from_json_dict(cls, raw: dict[str, Any]) -> "RequirementsTreeNode":
+        return cls(
+            node_id=raw["node_id"],
+            parent_id=raw.get("parent_id"),
+            kind=raw["kind"],
+            raw_entry_reference=(
+                RawEntryReference.from_json_dict(raw["raw_entry_reference"])
+                if raw.get("raw_entry_reference") is not None
+                else None
+            ),
+            project_paths=list(raw.get("project_paths", [])),
+            child_node_ids=list(raw.get("child_node_ids", [])),
+        )
+
+
+@dataclass
+class RequirementsTree:
+    project_id: str
+    next_node_id: int
+    nodes_by_id: dict[int, RequirementsTreeNode] = field(default_factory=dict)
+    top_level_node_ids: list[int] = field(default_factory=list)
+
+    def to_json_dict(self) -> dict[str, Any]:
+        return {
+            "project_id": self.project_id,
+            "next_node_id": self.next_node_id,
+            "top_level_node_ids": list(self.top_level_node_ids),
+            "nodes_by_id": {str(nid): n.to_json_dict() for nid, n in self.nodes_by_id.items()},
+        }
+
+    @classmethod
+    def from_json_dict(cls, raw: dict[str, Any]) -> "RequirementsTree":
+        return cls(
+            project_id=raw["project_id"],
+            next_node_id=raw["next_node_id"],
+            top_level_node_ids=list(raw.get("top_level_node_ids", [])),
+            nodes_by_id={
+                int(nid): RequirementsTreeNode.from_json_dict(n)
+                for nid, n in raw.get("nodes_by_id", {}).items()
+            },
+        )
+
+    @classmethod
+    def empty_for_project(cls, project_id: str) -> "RequirementsTree":
+        return cls(project_id=project_id, next_node_id=1)
+
+
+REQUIREMENTS_TREE_NODE_JSON_SCHEMA: dict[str, Any] = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "RequirementsTreeNode",
+    "type": "object",
+    "required": ["node_id", "parent_id", "kind", "child_node_ids"],
+    "properties": {
+        "node_id": {"type": "integer", "minimum": 1},
+        "parent_id": {"type": ["integer", "null"]},
+        "kind": {"enum": [QUOTE_REFERENCE_NODE_KIND, PROJECT_PATHS_SPECIAL_NODE_KIND]},
+        "raw_entry_reference": {
+            "type": "object",
+            "required": ["session_id", "entry_id"],
+            "properties": {
+                "session_id": {"type": "string"},
+                "entry_id": {"type": "string"},
+                "char_range": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 0},
+                    "minItems": 2,
+                    "maxItems": 2,
+                },
+            },
+        },
+        "project_paths": {"type": "array", "items": {"type": "string"}},
+        "child_node_ids": {"type": "array", "items": {"type": "integer"}},
+    },
+}
