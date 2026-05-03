@@ -7,6 +7,9 @@ Verbs:
   add-path                  <project_id> <filesystem_path>
   show-top-level            <project_id>
   init-project              <project_id>
+  init-and-register         <session_id> <conversation_path>
+                            (project_id = session_id; convention)
+  set-mode                  <project_id> <live|none|deferred>
 """
 from __future__ import annotations
 
@@ -15,7 +18,12 @@ import sys
 
 from .add_session_to_project_cli import add_session_to_project
 from .ai_cli_adapter_claude_code import ClaudeCodeAdapter
-from .config import ensure_root_directories_exist
+from .config import (
+    ALL_VALID_REVIEWER_MODES,
+    ensure_root_directories_exist,
+    load_project_settings,
+    save_project_settings,
+)
 from .conversation_context_injector import build_top_level_injection_text_for_project
 from .project_identifier_resolver import resolve_project_id_for_session
 from .raw_input_log_writer import append_submission_to_raw_input_log
@@ -109,12 +117,57 @@ def _handle_init_project(argv: list[str]) -> int:
     return 0
 
 
+def _handle_init_and_register(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print(
+            "Usage: sot init-and-register <session_id> <conversation_path>\n"
+            "  project_id is set to <session_id> by convention; the session is "
+            "added as a member in one shot.",
+            file=sys.stderr,
+        )
+        return 2
+    session_id, conversation_path = argv
+    project_id = session_id  # convention: project_id == initializing session_id
+    ensure_root_directories_exist()
+    save_requirements_tree_atomically(RequirementsTree.empty_for_project(project_id))
+    was_added = add_session_to_project(project_id, session_id, conversation_path)
+    print(
+        f"initialized project_id={project_id}; "
+        f"session={'added' if was_added else 'already_present'}"
+    )
+    return 0
+
+
+def _handle_set_mode(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print(
+            f"Usage: sot set-mode <project_id> <{'|'.join(ALL_VALID_REVIEWER_MODES)}>",
+            file=sys.stderr,
+        )
+        return 2
+    project_id, requested_mode = argv
+    if requested_mode not in ALL_VALID_REVIEWER_MODES:
+        print(
+            f"Invalid mode {requested_mode!r}. "
+            f"Valid: {', '.join(ALL_VALID_REVIEWER_MODES)}",
+            file=sys.stderr,
+        )
+        return 2
+    settings = load_project_settings(project_id)
+    settings.reviewer_mode_override = requested_mode
+    save_project_settings(settings)
+    print(f"project_id={project_id} reviewer_mode_override set to '{requested_mode}'")
+    return 0
+
+
 _VERB_DISPATCH_TABLE = {
     "user-prompt-submit-hook": lambda argv: _handle_user_prompt_submit_hook(),
     "add-session": _handle_add_session,
     "add-path": _handle_add_path,
     "show-top-level": _handle_show_top_level,
     "init-project": _handle_init_project,
+    "init-and-register": _handle_init_and_register,
+    "set-mode": _handle_set_mode,
 }
 
 

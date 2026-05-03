@@ -132,16 +132,27 @@ Because the hooks must be findable from any cwd in any session, install thin wra
 }
 ```
 
-## Initializing a project
+## CLI
+
+A small shell wrapper at `~/.local/bin/sot` (or wherever your local bin is) just calls the dispatcher with the package on `sys.path`:
 
 ```bash
-python3 -m source_of_truth.cli_entrypoint init-project <project_id>
-python3 -m source_of_truth.cli_entrypoint add-session <project_id> <session_id> <conversation_path>
-python3 -m source_of_truth.cli_entrypoint add-path <project_id> <filesystem_path>
-python3 -m source_of_truth.cli_entrypoint show-top-level <project_id>
+#!/usr/bin/env bash
+exec python3 -c "import sys; sys.path.insert(0, '/path/to/source-of-truth'); from source_of_truth.cli_entrypoint import _main; sys.exit(_main())" "$@"
 ```
 
-By convention `project_id` is the session id of the session that initialized the project, but any unique string works.
+Then:
+
+```bash
+sot init-and-register <session_id> <conversation_path>     # one-shot: init project + add this session
+sot init-project       <project_id>                        # init only (project_id can be anything)
+sot add-session        <project_id> <session_id> <conversation_path>
+sot add-path           <project_id> <filesystem_path>
+sot set-mode           <project_id> live|none|deferred
+sot show-top-level     <project_id>
+```
+
+By convention `project_id` is the session_id of the session that initialized the project, which is what `init-and-register` does in one step.
 
 ## Tests
 
