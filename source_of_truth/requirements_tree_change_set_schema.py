@@ -54,12 +54,11 @@ REQUIREMENTS_TREE_CHANGE_SET_JSON_SCHEMA: dict[str, Any] = {
                     "parent_id": {"type": ["integer", "null"]},
                     "node_id": {"type": "integer"},
                     "new_parent_id": {"type": ["integer", "null"]},
-                    "raw_entry_reference": {
+                    "raw_input_reference": {
                         "type": "object",
-                        "required": ["session_id", "entry_id"],
+                        "required": ["raw_input_id"],
                         "properties": {
-                            "session_id": {"type": "string"},
-                            "entry_id": {"type": "string"},
+                            "raw_input_id": {"type": "integer", "minimum": 0},
                             "char_range": {
                                 "type": "array",
                                 "items": {"type": "integer", "minimum": 0},

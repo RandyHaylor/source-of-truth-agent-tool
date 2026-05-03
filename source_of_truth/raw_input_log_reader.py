@@ -1,4 +1,4 @@
-"""Read-only access to entries in a project's raw_input_log.json."""
+"""Read-only access to entries in a project's raw_input_log.json by raw_input_id."""
 from __future__ import annotations
 
 import json
@@ -29,35 +29,43 @@ def load_raw_log_for_project(project_id: str) -> dict[str, list[dict]]:
     return data
 
 
-def get_raw_log_entry(
-    project_id: str, session_id: str, entry_id: str
+def get_raw_log_entry_by_raw_input_id(
+    project_id: str, raw_input_id: int
 ) -> RawInputLogEntry:
     log_data = load_raw_log_for_project(project_id)
-    session_entries = log_data.get(session_id)
-    if not session_entries:
-        raise RawLogEntryNotFoundError(
-            f"No entries logged for session_id={session_id} in project={project_id}"
-        )
-    for raw_entry in session_entries:
-        if raw_entry.get("entry_id") == entry_id:
-            return RawInputLogEntry.from_json_dict(raw_entry)
+    for session_entries in log_data.values():
+        for raw_entry in session_entries:
+            if int(raw_entry.get("raw_input_id", -1)) == raw_input_id:
+                return RawInputLogEntry.from_json_dict(raw_entry)
     raise RawLogEntryNotFoundError(
-        f"entry_id={entry_id} not found for session_id={session_id}"
+        f"raw_input_id={raw_input_id} not found in project={project_id}"
+    )
+
+
+def find_session_id_for_raw_input_id(
+    project_id: str, raw_input_id: int
+) -> str:
+    log_data = load_raw_log_for_project(project_id)
+    for session_id, session_entries in log_data.items():
+        for raw_entry in session_entries:
+            if int(raw_entry.get("raw_input_id", -1)) == raw_input_id:
+                return session_id
+    raise RawLogEntryNotFoundError(
+        f"raw_input_id={raw_input_id} not found in project={project_id}"
     )
 
 
 def resolve_quote_text_from_reference(
     project_id: str,
-    session_id: str,
-    entry_id: str,
+    raw_input_id: int,
     char_range: Optional[tuple[int, int]] = None,
 ) -> str:
-    entry = get_raw_log_entry(project_id, session_id, entry_id)
+    entry = get_raw_log_entry_by_raw_input_id(project_id, raw_input_id)
     full_text = entry.submission_text
     if char_range is None:
         return full_text
     start_char_index, end_char_index = char_range
-    if start_char_index < 0 or end_char_index > len(full_text) or start_char_index > end_char_index:
+    if start_char_index < 0 or end_char_index >= len(full_text) or start_char_index > end_char_index:
         raise CharRangeOutOfBoundsError(
             f"char_range {char_range} out of bounds for entry of length {len(full_text)}"
         )

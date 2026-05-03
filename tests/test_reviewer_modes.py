@@ -46,15 +46,15 @@ class _StubAdapter(AiCliAdapterInterface):
 
 def _seed_one_short_raw_entry(project_id: str, session_id: str = "s") -> str:
     log_result = append_submission_to_raw_input_log(project_id, session_id, "yes", "")
-    return log_result["entry_id"]
+    return log_result["raw_input_id"]
 
 
-def _build_one_op_change_set(session_id: str, entry_id: str) -> dict:
+def _build_one_op_change_set(raw_input_id: int) -> dict:
     return {
         "submitter_rationale": "test",
         "operations": [{
             "op": "add_top_level",
-            "raw_entry_reference": {"session_id": session_id, "entry_id": entry_id},
+            "raw_input_reference": {"raw_input_id": raw_input_id},
         }],
     }
 
@@ -69,7 +69,7 @@ def test_no_reviewer_mode_applies_change_set_directly_without_calling_reviewer()
 
     with patch("source_of_truth.requirements_tree_controlled_api.request_change_set_review") as mock_review:
         result = api.submit_requirements_tree_change_set(
-            _build_one_op_change_set("s", entry_id)
+            _build_one_op_change_set(entry_id)
         )
         assert mock_review.call_count == 0  # reviewer NEVER called
 
@@ -89,7 +89,7 @@ def test_deferred_mode_queues_change_set_without_calling_reviewer_or_applying():
 
     with patch("source_of_truth.requirements_tree_controlled_api.request_change_set_review") as mock_review:
         result = api.submit_requirements_tree_change_set(
-            _build_one_op_change_set("s", entry_id)
+            _build_one_op_change_set(entry_id)
         )
         assert mock_review.call_count == 0
 
@@ -110,8 +110,8 @@ def test_deferred_flush_calls_reviewer_once_with_merged_ops_and_applies_on_appro
     entry_a = _seed_one_short_raw_entry("p-defer-flush", "s")
     entry_b = _seed_one_short_raw_entry("p-defer-flush", "s")
     api = RequirementsTreeControlledApi("p-defer-flush", _StubAdapter())
-    api.submit_requirements_tree_change_set(_build_one_op_change_set("s", entry_a))
-    api.submit_requirements_tree_change_set(_build_one_op_change_set("s", entry_b))
+    api.submit_requirements_tree_change_set(_build_one_op_change_set(entry_a))
+    api.submit_requirements_tree_change_set(_build_one_op_change_set(entry_b))
     assert count_pending_deferred_change_sets("p-defer-flush") == 2
 
     with patch(
@@ -152,7 +152,7 @@ def test_deferred_flush_rejection_keeps_tree_unchanged_and_does_not_requeue():
     ))
     entry_id = _seed_one_short_raw_entry("p-defer-reject", "s")
     api = RequirementsTreeControlledApi("p-defer-reject", _StubAdapter())
-    api.submit_requirements_tree_change_set(_build_one_op_change_set("s", entry_id))
+    api.submit_requirements_tree_change_set(_build_one_op_change_set(entry_id))
 
     with patch(
         "source_of_truth.requirements_tree_controlled_api.request_change_set_review",

@@ -1,12 +1,19 @@
-"""Validates raw-entry references in change-set operations against the raw log on disk."""
+"""Validates raw_input_id references in change-set operations against the raw log on disk.
+
+Rules per spec:
+  - raw_input_id must resolve to a real entry in the project's raw input log.
+  - char_range is FORBIDDEN when submission length <= CHAR_RANGE_ALLOWED_ABOVE_THRESHOLD.
+  - char_range is ALLOWED-BUT-OPTIONAL when submission length > threshold.
+  - When char_range is present it must be in-bounds and at least MIN_CHAR_RANGE_LENGTH chars.
+"""
 from __future__ import annotations
 
 from typing import Any
 
-from .config import CHAR_RANGE_REQUIRED_THRESHOLD, MIN_CHAR_RANGE_LENGTH
+from .config import CHAR_RANGE_ALLOWED_ABOVE_THRESHOLD, MIN_CHAR_RANGE_LENGTH
 from .raw_input_log_reader import (
     RawLogEntryNotFoundError,
-    get_raw_log_entry,
+    get_raw_log_entry_by_raw_input_id,
 )
 
 
@@ -14,30 +21,32 @@ class ReferenceValidationError(ValueError):
     pass
 
 
-def validate_raw_entry_reference(
-    project_id: str, raw_entry_reference: dict[str, Any]
+def validate_raw_input_reference(
+    project_id: str, raw_input_reference: dict[str, Any]
 ) -> None:
-    session_id = raw_entry_reference.get("session_id")
-    entry_id = raw_entry_reference.get("entry_id")
-    char_range = raw_entry_reference.get("char_range")
-    if not session_id or not entry_id:
+    raw_input_id = raw_input_reference.get("raw_input_id")
+    char_range = raw_input_reference.get("char_range")
+    if raw_input_id is None or not isinstance(raw_input_id, int):
         raise ReferenceValidationError(
-            f"raw_entry_reference missing session_id or entry_id: {raw_entry_reference}"
+            f"raw_input_reference must include integer raw_input_id: {raw_input_reference}"
         )
     try:
-        entry = get_raw_log_entry(project_id, session_id, entry_id)
+        entry = get_raw_log_entry_by_raw_input_id(project_id, raw_input_id)
     except RawLogEntryNotFoundError as exc:
         raise ReferenceValidationError(str(exc)) from exc
 
     submission_text_length = len(entry.submission_text)
 
     if char_range is None:
-        if submission_text_length > CHAR_RANGE_REQUIRED_THRESHOLD:
-            raise ReferenceValidationError(
-                f"submission_text length {submission_text_length} exceeds "
-                f"{CHAR_RANGE_REQUIRED_THRESHOLD}; char_range is required."
-            )
         return
+
+    # char_range was provided -- it is only allowed when the submission is long enough
+    # to need slicing.
+    if submission_text_length <= CHAR_RANGE_ALLOWED_ABOVE_THRESHOLD:
+        raise ReferenceValidationError(
+            f"char_range is only allowed when submission length > {CHAR_RANGE_ALLOWED_ABOVE_THRESHOLD}; "
+            f"this submission is {submission_text_length} chars, so cite the whole entry instead."
+        )
 
     if not (isinstance(char_range, list) and len(char_range) == 2):
         raise ReferenceValidationError(f"char_range must be [start, end]; got {char_range}")
@@ -61,5 +70,5 @@ def validate_change_set_references(
     project_id: str, change_set_operations: list[dict[str, Any]]
 ) -> None:
     for operation in change_set_operations:
-        if "raw_entry_reference" in operation and operation["raw_entry_reference"] is not None:
-            validate_raw_entry_reference(project_id, operation["raw_entry_reference"])
+        if "raw_input_reference" in operation and operation["raw_input_reference"] is not None:
+            validate_raw_input_reference(project_id, operation["raw_input_reference"])

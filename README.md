@@ -56,17 +56,22 @@ A change-set is a JSON object:
 {
   "submitter_rationale": "free-text explanation",
   "operations": [
-    {"op": "add", "parent_id": 12, "raw_entry_reference": {"session_id": "...", "entry_id": "...", "char_range": [120, 180]}},
-    {"op": "add_top_level", "raw_entry_reference": {...}},
+    {"op": "add", "parent_id": 12, "raw_input_reference": {"raw_input_id": 23, "char_range": [120, 180]}},
+    {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 7}},
     {"op": "reparent", "node_id": 23, "new_parent_id": 33},
     {"op": "remove", "node_id": 47},
-    {"op": "modify_reference", "node_id": 23, "raw_entry_reference": {...}},
+    {"op": "modify_reference", "node_id": 23, "raw_input_reference": {"raw_input_id": 11}},
     {"op": "reorder_children", "parent_id": 12, "child_order": [4, 23, 9]}
   ]
 }
 ```
 
-`char_range` is `[start, end]` inclusive character indices into `submission_text`. It is REQUIRED when `submission_text` is longer than 500 characters; otherwise optional. Minimum range length is 1 character (so terse replies like "y" or "C" are still citable).
+`raw_input_id` is a per-project integer (assigned at log time, starting at 0). It is the only thing needed to identify a quote — session_id and timestamp are stored as data on the entry but are not part of the reference.
+
+`char_range` rules per spec:
+- **Forbidden** when the cited submission's length is at or under the threshold (500 chars). The whole entry is the citation.
+- **Allowed but optional** when the submission length is over the threshold. Use it for precision; omit to cite the whole entry.
+- When provided, it's `[start, end]` inclusive character indices and must be at least 1 character long.
 
 ## How agents are notified
 

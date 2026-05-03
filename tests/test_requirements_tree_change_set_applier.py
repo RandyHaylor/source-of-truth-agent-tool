@@ -13,20 +13,20 @@ from source_of_truth.requirements_tree_node_schema import RequirementsTree
 
 def _build_tree_with_two_top_level_nodes_each_with_one_child() -> RequirementsTree:
     tree = RequirementsTree.empty_for_project("proj-x")
-    add_top_a = {"op": "add_top_level", "raw_entry_reference": {"session_id": "s1", "entry_id": "e1"}}
-    add_top_b = {"op": "add_top_level", "raw_entry_reference": {"session_id": "s1", "entry_id": "e2"}}
+    add_top_a = {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 1}}
+    add_top_b = {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 2}}
     tree = apply_change_set_to_tree(tree, [add_top_a, add_top_b])
     add_child_to_a = {"op": "add", "parent_id": tree.top_level_node_ids[0],
-                      "raw_entry_reference": {"session_id": "s1", "entry_id": "e3"}}
+                      "raw_input_reference": {"raw_input_id": 3}}
     add_child_to_b = {"op": "add", "parent_id": tree.top_level_node_ids[1],
-                      "raw_entry_reference": {"session_id": "s1", "entry_id": "e4"}}
+                      "raw_input_reference": {"raw_input_id": 4}}
     return apply_change_set_to_tree(tree, [add_child_to_a, add_child_to_b])
 
 
 def test_add_top_level_creates_node_and_registers_at_top():
     tree = RequirementsTree.empty_for_project("p")
     new_tree = apply_change_set_to_tree(tree, [
-        {"op": "add_top_level", "raw_entry_reference": {"session_id": "s", "entry_id": "e"}}
+        {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 0}}
     ])
     assert len(new_tree.top_level_node_ids) == 1
     assert len(new_tree.nodes_by_id) == 1
@@ -56,8 +56,7 @@ def test_remove_deletes_node_and_descendants():
     new_tree = apply_change_set_to_tree(tree, [{"op": "remove", "node_id": parent_a}])
     assert parent_a not in new_tree.nodes_by_id
     assert parent_a not in new_tree.top_level_node_ids
-    # original child of A should also be gone
-    assert len(new_tree.nodes_by_id) == 2  # the other parent + its child
+    assert len(new_tree.nodes_by_id) == 2
 
 
 def test_modify_reference_updates_quote_pointer():
@@ -65,18 +64,17 @@ def test_modify_reference_updates_quote_pointer():
     target = tree.top_level_node_ids[0]
     new_tree = apply_change_set_to_tree(tree, [{
         "op": "modify_reference", "node_id": target,
-        "raw_entry_reference": {"session_id": "s9", "entry_id": "e9"},
+        "raw_input_reference": {"raw_input_id": 99},
     }])
-    assert new_tree.nodes_by_id[target].raw_entry_reference.session_id == "s9"
+    assert new_tree.nodes_by_id[target].raw_input_reference.raw_input_id == 99
 
 
 def test_reorder_children_requires_same_set_and_reorders():
     tree = _build_tree_with_two_top_level_nodes_each_with_one_child()
     parent_a = tree.top_level_node_ids[0]
-    # Add a second child under A so reordering is meaningful.
     tree = apply_change_set_to_tree(tree, [{
         "op": "add", "parent_id": parent_a,
-        "raw_entry_reference": {"session_id": "s", "entry_id": "e_extra"},
+        "raw_input_reference": {"raw_input_id": 5},
     }])
     children = list(tree.nodes_by_id[parent_a].child_node_ids)
     reversed_children = list(reversed(children))

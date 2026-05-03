@@ -11,7 +11,9 @@ SOURCE_OF_TRUTH_ROOT_DIR: Path = Path.home() / ".source-of-truth"
 GLOBAL_SETTINGS_FILE_PATH: Path = SOURCE_OF_TRUTH_ROOT_DIR / "global-settings.json"
 PROJECTS_PARENT_DIR: Path = SOURCE_OF_TRUTH_ROOT_DIR / "projects"
 
-CHAR_RANGE_REQUIRED_THRESHOLD: int = 500
+CHAR_RANGE_ALLOWED_ABOVE_THRESHOLD: int = 500
+# char_range is FORBIDDEN when submission length <= threshold (whole entry is the citation),
+# and ALLOWED-BUT-OPTIONAL when submission length > threshold.
 PRE_SUBMISSION_CAPTURE_CHAR_LIMIT: int = 2000
 MIN_CHAR_RANGE_LENGTH: int = 1
 
@@ -35,9 +37,9 @@ TOP_LEVEL_INJECTION_BLURB_TEMPLATE: str = (
     "[SoT] top: {top_level_node_json}\n"
     "API: search_requirements_nodes(q) | get_node_by_id(id) | submit_requirements_tree_change_set(cs)\n"
     "Capture rule: on every definitive user reply (explicit OR pick from your A/B/C), "
-    "queue an add/add_top_level op referencing the raw entry_id (just logged); "
-    "use pre_submission_content via char_range to anchor terse replies; "
-    "char_range REQUIRED if submission >500 chars; batch ops; never paraphrase."
+    "queue an add/add_top_level op referencing the raw_input_id (just logged); "
+    "char_range is FORBIDDEN when submission <=500 chars (cite whole entry) "
+    "and ALLOWED-BUT-OPTIONAL when submission >500 chars; batch ops; never paraphrase."
 )
 
 

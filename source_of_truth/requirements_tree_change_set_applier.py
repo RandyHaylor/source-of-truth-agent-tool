@@ -18,7 +18,7 @@ from .requirements_tree_change_set_schema import (
 )
 from .requirements_tree_node_schema import (
     QUOTE_REFERENCE_NODE_KIND,
-    RawEntryReference,
+    RawInputReference,
     RequirementsTree,
     RequirementsTreeNode,
 )
@@ -56,8 +56,8 @@ def apply_change_set_to_tree(
                 node_id=new_node_id,
                 parent_id=parent_id,
                 kind=QUOTE_REFERENCE_NODE_KIND,
-                raw_entry_reference=RawEntryReference.from_json_dict(
-                    operation["raw_entry_reference"]
+                raw_input_reference=RawInputReference.from_json_dict(
+                    operation["raw_input_reference"]
                 ),
             )
             parent_node.child_node_ids.append(new_node_id)
@@ -68,8 +68,8 @@ def apply_change_set_to_tree(
                 node_id=new_node_id,
                 parent_id=None,
                 kind=QUOTE_REFERENCE_NODE_KIND,
-                raw_entry_reference=RawEntryReference.from_json_dict(
-                    operation["raw_entry_reference"]
+                raw_input_reference=RawInputReference.from_json_dict(
+                    operation["raw_input_reference"]
                 ),
             )
             new_tree.top_level_node_ids.append(new_node_id)
@@ -119,8 +119,8 @@ def apply_change_set_to_tree(
                 raise ChangeSetApplicationError(
                     f"modify_reference invalid on non-quote node {node_id} (kind={node.kind})"
                 )
-            node.raw_entry_reference = RawEntryReference.from_json_dict(
-                operation["raw_entry_reference"]
+            node.raw_input_reference = RawInputReference.from_json_dict(
+                operation["raw_input_reference"]
             )
 
         elif op_kind == OPERATION_KIND_REORDER_CHILDREN:

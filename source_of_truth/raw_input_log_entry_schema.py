@@ -1,4 +1,9 @@
-"""Dataclass + JSON schema for one raw user-input log entry."""
+"""Dataclass + JSON schema for one raw input log entry.
+
+raw_input_id is a per-project integer (starts at 0) that is the canonical
+reference identifier. timestamp_iso is captured at second resolution as data,
+not as the identifier.
+"""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -7,7 +12,7 @@ from typing import Any
 
 @dataclass
 class RawInputLogEntry:
-    entry_id: str
+    raw_input_id: int
     timestamp_iso: str
     pre_submission_content: str
     submission_text: str
@@ -18,7 +23,7 @@ class RawInputLogEntry:
     @classmethod
     def from_json_dict(cls, raw: dict[str, Any]) -> "RawInputLogEntry":
         return cls(
-            entry_id=raw["entry_id"],
+            raw_input_id=int(raw["raw_input_id"]),
             timestamp_iso=raw["timestamp_iso"],
             pre_submission_content=raw["pre_submission_content"],
             submission_text=raw["submission_text"],
@@ -30,13 +35,13 @@ RAW_INPUT_LOG_ENTRY_JSON_SCHEMA: dict[str, Any] = {
     "title": "RawInputLogEntry",
     "type": "object",
     "required": [
-        "entry_id",
+        "raw_input_id",
         "timestamp_iso",
         "pre_submission_content",
         "submission_text",
     ],
     "properties": {
-        "entry_id": {"type": "string", "minLength": 1},
+        "raw_input_id": {"type": "integer", "minimum": 0},
         "timestamp_iso": {"type": "string", "minLength": 1},
         "pre_submission_content": {"type": "string"},
         "submission_text": {"type": "string"},

@@ -1,6 +1,6 @@
 """Sends a change-set to the live reviewer session and parses an approve/deny verdict.
 
-Performance note: every raw_entry_reference in the change-set is resolved against
+Performance note: every raw_input_reference in the change-set is resolved against
 the on-disk raw input log and the resolved quote text + pre_submission_content
 are inlined directly into the prompt, so the reviewer never needs to invoke
 Read tools to verdict. This keeps the round-trip to a single Claude turn.
@@ -14,7 +14,8 @@ from typing import Any
 
 from .raw_input_log_reader import (
     RawLogEntryNotFoundError,
-    get_raw_log_entry,
+    find_session_id_for_raw_input_id,
+    get_raw_log_entry_by_raw_input_id,
     resolve_quote_text_from_reference,
 )
 from .reviewer_session_lifecycle_manager import ReviewerSessionLifecycleManager
@@ -42,16 +43,16 @@ def _build_inline_resolved_context_for_change_set(
 ) -> str:
     inlined_blocks: list[str] = []
     for op_index, operation in enumerate(change_set_json_dict.get("operations", [])):
-        ref = operation.get("raw_entry_reference")
+        ref = operation.get("raw_input_reference")
         if not ref:
             continue
-        session_id = ref["session_id"]
-        entry_id = ref["entry_id"]
+        raw_input_id = ref["raw_input_id"]
         char_range = tuple(ref["char_range"]) if ref.get("char_range") else None
         try:
-            entry = get_raw_log_entry(project_id, session_id, entry_id)
+            entry = get_raw_log_entry_by_raw_input_id(project_id, raw_input_id)
+            session_id = find_session_id_for_raw_input_id(project_id, raw_input_id)
             quoted_text = resolve_quote_text_from_reference(
-                project_id, session_id, entry_id, char_range
+                project_id, raw_input_id, char_range
             )
         except (RawLogEntryNotFoundError, ValueError) as exc:
             inlined_blocks.append(
@@ -59,7 +60,7 @@ def _build_inline_resolved_context_for_change_set(
             )
             continue
         inlined_blocks.append(
-            f"--- op[{op_index}] op={operation.get('op')} ---\n"
+            f"--- op[{op_index}] op={operation.get('op')} raw_input_id={raw_input_id} session={session_id} ---\n"
             f"PRE-INPUT CONTEXT (what the agent had said before this raw input):\n"
             f"{entry.pre_submission_content}\n"
             f"FULL RAW INPUT:\n{entry.submission_text}\n"

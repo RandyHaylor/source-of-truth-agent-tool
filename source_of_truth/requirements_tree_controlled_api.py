@@ -101,17 +101,16 @@ class RequirementsTreeControlledApi:
         query_lowered = query.lower()
         matches: list[dict[str, Any]] = []
         for node in tree.nodes_by_id.values():
-            if node.raw_entry_reference is None:
+            if node.raw_input_reference is None:
                 if any(query_lowered in p.lower() for p in node.project_paths):
                     matches.append(node.to_json_dict())
                 continue
             try:
                 quote_text = resolve_quote_text_from_reference(
                     self._project_id,
-                    node.raw_entry_reference.session_id,
-                    node.raw_entry_reference.entry_id,
-                    tuple(node.raw_entry_reference.char_range)  # type: ignore[arg-type]
-                    if node.raw_entry_reference.char_range else None,
+                    node.raw_input_reference.raw_input_id,
+                    tuple(node.raw_input_reference.char_range)  # type: ignore[arg-type]
+                    if node.raw_input_reference.char_range else None,
                 )
             except Exception:
                 continue

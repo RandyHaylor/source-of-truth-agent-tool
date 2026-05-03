@@ -26,7 +26,7 @@ def _summarize_top_level_for_injection(tree: RequirementsTree) -> dict:
             "node_id": node.node_id,
             "kind": node.kind,
             "child_count": len(node.child_node_ids),
-            "has_reference": node.raw_entry_reference is not None,
+            "has_reference": node.raw_input_reference is not None,
             "project_paths_count": len(node.project_paths) if node.project_paths else 0,
         })
     return {

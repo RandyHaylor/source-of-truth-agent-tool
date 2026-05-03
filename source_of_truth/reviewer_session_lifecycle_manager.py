@@ -40,7 +40,7 @@ def _build_priming_prompt_text(project_id: str) -> str:
         f"Source-of-truth tree file: {project_source_of_truth_file_path(project_id)}\n"
         f"Raw input log file: {project_raw_input_log_file_path(project_id)}\n"
         f"You will receive batched change-sets to the requirements tree. For each, "
-        f"verify that every operation's raw_entry_reference (and char_range, if "
+        f"verify that every operation's raw_input_reference (and char_range, if "
         f"present) accurately represents the raw input sender's intent in context. "
         f"Reply with EXACTLY one JSON object on its own line and nothing else: "
         f'{{"approved": <bool>, "message": "<reason or guidance>"}}'

@@ -9,22 +9,20 @@ QUOTE_REFERENCE_NODE_KIND: str = "quote_reference"
 
 
 @dataclass
-class RawEntryReference:
-    session_id: str
-    entry_id: str
-    char_range: Optional[list[int]] = None  # [start, end] inclusive
+class RawInputReference:
+    raw_input_id: int
+    char_range: Optional[list[int]] = None  # [start, end] inclusive; only allowed above threshold
 
     def to_json_dict(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"session_id": self.session_id, "entry_id": self.entry_id}
+        out: dict[str, Any] = {"raw_input_id": self.raw_input_id}
         if self.char_range is not None:
             out["char_range"] = list(self.char_range)
         return out
 
     @classmethod
-    def from_json_dict(cls, raw: dict[str, Any]) -> "RawEntryReference":
+    def from_json_dict(cls, raw: dict[str, Any]) -> "RawInputReference":
         return cls(
-            session_id=raw["session_id"],
-            entry_id=raw["entry_id"],
+            raw_input_id=int(raw["raw_input_id"]),
             char_range=list(raw["char_range"]) if raw.get("char_range") is not None else None,
         )
 
@@ -34,7 +32,7 @@ class RequirementsTreeNode:
     node_id: int
     parent_id: Optional[int]
     kind: str  # QUOTE_REFERENCE_NODE_KIND or PROJECT_PATHS_SPECIAL_NODE_KIND
-    raw_entry_reference: Optional[RawEntryReference] = None  # required if kind=quote_reference
+    raw_input_reference: Optional[RawInputReference] = None  # required if kind=quote_reference
     project_paths: list[str] = field(default_factory=list)    # only for project_paths node
     child_node_ids: list[int] = field(default_factory=list)
 
@@ -45,8 +43,8 @@ class RequirementsTreeNode:
             "kind": self.kind,
             "child_node_ids": list(self.child_node_ids),
         }
-        if self.raw_entry_reference is not None:
-            out["raw_entry_reference"] = self.raw_entry_reference.to_json_dict()
+        if self.raw_input_reference is not None:
+            out["raw_input_reference"] = self.raw_input_reference.to_json_dict()
         if self.kind == PROJECT_PATHS_SPECIAL_NODE_KIND:
             out["project_paths"] = list(self.project_paths)
         return out
@@ -57,9 +55,9 @@ class RequirementsTreeNode:
             node_id=raw["node_id"],
             parent_id=raw.get("parent_id"),
             kind=raw["kind"],
-            raw_entry_reference=(
-                RawEntryReference.from_json_dict(raw["raw_entry_reference"])
-                if raw.get("raw_entry_reference") is not None
+            raw_input_reference=(
+                RawInputReference.from_json_dict(raw["raw_input_reference"])
+                if raw.get("raw_input_reference") is not None
                 else None
             ),
             project_paths=list(raw.get("project_paths", [])),
@@ -108,12 +106,11 @@ REQUIREMENTS_TREE_NODE_JSON_SCHEMA: dict[str, Any] = {
         "node_id": {"type": "integer", "minimum": 1},
         "parent_id": {"type": ["integer", "null"]},
         "kind": {"enum": [QUOTE_REFERENCE_NODE_KIND, PROJECT_PATHS_SPECIAL_NODE_KIND]},
-        "raw_entry_reference": {
+        "raw_input_reference": {
             "type": "object",
-            "required": ["session_id", "entry_id"],
+            "required": ["raw_input_id"],
             "properties": {
-                "session_id": {"type": "string"},
-                "entry_id": {"type": "string"},
+                "raw_input_id": {"type": "integer", "minimum": 0},
                 "char_range": {
                     "type": "array",
                     "items": {"type": "integer", "minimum": 0},
