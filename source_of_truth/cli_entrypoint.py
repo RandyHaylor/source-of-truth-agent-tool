@@ -62,7 +62,10 @@ def _handle_user_prompt_submit_hook() -> int:
     additional_context = (
         f"{log_result['additional_context_message']}\n\n{injection_text}"
     )
-    print(json.dumps({"hookSpecificOutput": {"additionalContext": additional_context}}))
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "UserPromptSubmit",
+        "additionalContext": additional_context,
+    }}))
     return 0
 
 
