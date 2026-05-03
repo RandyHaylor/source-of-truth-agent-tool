@@ -2,26 +2,14 @@
 """
 Cross-platform uninstaller for source-of-truth-agent-tool's global hooks.
 
-Reverses what install.py did (and is also tolerant of a previous manual
-install that placed loose wrappers under ~/.claude/hooks/):
-  1. Removes ~/.claude/hooks/source-of-truth-agent-tool/ (the install dir).
-  2. Removes any old loose wrappers
-     ~/.claude/hooks/source_of_truth_user_prompt_submit_hook.py
-     ~/.claude/hooks/source_of_truth_post_tool_use_hook.py
-  3. Reads ~/.claude/settings.json, removes any UserPromptSubmit or
-     PostToolUse hook entry whose command references either of the above.
-  4. Writes settings.json back, with a timestamped backup.
+Reverses what install.py did:
+  1. Removes ~/.claude/hooks/source-of-truth-agent-tool/.
+  2. Removes any UserPromptSubmit or PostToolUse hook entry from
+     ~/.claude/settings.json whose command references that install dir.
+  3. Backs up settings.json before changing it.
 
-Does NOT delete:
-  - ~/.source-of-truth/  (your raw input logs, requirements trees, project
-    settings, reviewer thinking logs). Treated as user data; remove manually
-    if you really want to wipe it.
-
-Safe to re-run.
-
-Run:
-  python3 uninstall.py          # Linux/macOS
-  python uninstall.py           # Windows
+Does NOT delete ~/.source-of-truth/ (raw input logs, requirements trees,
+project settings). Remove that directory manually if you want to wipe state.
 """
 import datetime
 import json
@@ -30,17 +18,6 @@ import shutil
 
 
 HOOK_INSTALL_DIR_NAME = "source-of-truth-agent-tool"
-
-MARKER_SUBSTRINGS = (
-    HOOK_INSTALL_DIR_NAME,
-    "source_of_truth_user_prompt_submit_hook.py",
-    "source_of_truth_post_tool_use_hook.py",
-)
-
-OLD_LOOSE_WRAPPER_FILENAMES = (
-    "source_of_truth_user_prompt_submit_hook.py",
-    "source_of_truth_post_tool_use_hook.py",
-)
 
 
 def home_claude_dir():
@@ -60,9 +37,7 @@ def load_settings_json_if_exists(path):
         return None
     with open(path) as f:
         content = f.read().strip()
-    if not content:
-        return {}
-    return json.loads(content)
+    return json.loads(content) if content else {}
 
 
 def backup_file(path):
@@ -94,8 +69,7 @@ def remove_our_hook_entries(settings_data, hook_event_name):
         inner_hooks = matcher_entry.get("hooks", [])
         filtered_inner_hooks = []
         for hook_item in inner_hooks:
-            command_text = hook_item.get("command", "")
-            if any(m in command_text for m in MARKER_SUBSTRINGS):
+            if HOOK_INSTALL_DIR_NAME in hook_item.get("command", ""):
                 removed_count += 1
                 continue
             filtered_inner_hooks.append(hook_item)
@@ -116,8 +90,7 @@ def main():
     settings_path = settings_json_path()
 
     print(f"Install dir: {install_dir}")
-    print(f"Settings:    {settings_path}")
-    print()
+    print(f"Settings:    {settings_path}\n")
 
     print("Step 1: remove install dir")
     if os.path.isdir(install_dir):
@@ -127,24 +100,14 @@ def main():
         print(f"  not present — nothing to remove at {install_dir}")
     print()
 
-    print("Step 2: remove any old loose wrappers")
-    home_hooks_dir = os.path.join(home_claude_dir(), "hooks")
-    for old_name in OLD_LOOSE_WRAPPER_FILENAMES:
-        old_path = os.path.join(home_hooks_dir, old_name)
-        if os.path.isfile(old_path):
-            os.remove(old_path)
-            print(f"  removed: {old_path}")
-    print()
-
-    print("Step 3: scrub hook entries from settings.json")
+    print("Step 2: scrub hook entries from settings.json")
     settings_data = load_settings_json_if_exists(settings_path)
     if settings_data is None:
-        print(f"  settings.json does not exist — nothing to edit")
+        print("  settings.json does not exist — nothing to edit")
     else:
-        removed_user_count = remove_our_hook_entries(settings_data, "UserPromptSubmit")
-        removed_post_count = remove_our_hook_entries(settings_data, "PostToolUse")
-        total_removed = removed_user_count + removed_post_count
-        if total_removed == 0:
+        removed_user = remove_our_hook_entries(settings_data, "UserPromptSubmit")
+        removed_post = remove_our_hook_entries(settings_data, "PostToolUse")
+        if removed_user + removed_post == 0:
             print("  no matching hook entries found — nothing to remove")
         else:
             backup_path = backup_file(settings_path)
@@ -152,16 +115,12 @@ def main():
                 print(f"  backed up old settings.json to {backup_path}")
             write_settings_json(settings_path, settings_data)
             print(
-                f"  removed {removed_user_count} UserPromptSubmit + "
-                f"{removed_post_count} PostToolUse entries"
+                f"  removed {removed_user} UserPromptSubmit + "
+                f"{removed_post} PostToolUse entries"
             )
-    print()
 
-    print("Uninstall complete.")
-    print(
-        "Note: ~/.source-of-truth/ (your raw input logs, requirements trees, "
-        "project settings) was left in place. Delete manually if you want to wipe it."
-    )
+    print("\nUninstall complete.")
+    print("Note: ~/.source-of-truth/ left in place. Delete manually to wipe state.")
 
 
 if __name__ == "__main__":
