@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Cross-platform uninstaller for source-of-truth-agent-tool's global hooks.
+Cross-platform uninstaller for source-of-truth-agent-tool.
 
 Reverses what install.py did:
-  1. Removes ~/.claude/hooks/source-of-truth-agent-tool/.
+  1. Removes ~/.claude/hooks/source-of-truth-agent-tool/ entirely
+     (this contains both the wrapper scripts AND the copied
+     source_of_truth/ application package).
   2. Removes any UserPromptSubmit or PostToolUse hook entry from
      ~/.claude/settings.json whose command references that install dir.
   3. Backs up settings.json before changing it.

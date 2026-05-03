@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-Cross-platform installer for source-of-truth-agent-tool's global hooks.
+Cross-platform installer for source-of-truth-agent-tool.
 
 What it does (idempotent):
-  1. Records the absolute path of THIS repo (where install.py lives) so the
-     wrapper scripts know how to import the source_of_truth package.
-  2. Creates ~/.claude/hooks/source-of-truth-agent-tool/ (the install dir).
-  3. Writes two wrapper scripts there:
+  1. Creates ~/.claude/hooks/source-of-truth-agent-tool/ (the install dir).
+  2. Copies the source_of_truth/ Python package from this repo into the
+     install dir. After this, the cloned repo can be deleted -- the
+     installed copy stands alone.
+  3. Writes two wrapper scripts in the install dir:
        - user_prompt_submit_hook.py
        - post_tool_use_hook.py
-     Each does its own sys.path setup pointing at this repo, and silently
-     emits {} on any error so unrelated sessions never see import errors.
+     Each adds the install dir to sys.path and calls into the copied
+     package. On any error they silently emit {} so unrelated sessions
+     never see import errors.
   4. Patches ~/.claude/settings.json to register both hooks if not already
      present. Existing hook entries (yours or other plugins') are left alone.
   5. Backs up settings.json with a timestamp before any change.
@@ -91,14 +93,44 @@ def python_launcher_for_current_platform():
     return "python" if platform.system() == "Windows" else "python3"
 
 
-def write_wrapper_scripts(install_dir, package_dir):
+def copy_app_package_into_install_dir(repo_dir, install_dir):
+    """Copy the source_of_truth/ subdir from the repo into the install dir.
+
+    Uses copytree(dirs_exist_ok=True) so re-running the installer overwrites
+    in place without leaving stale files (well, it leaves files that exist
+    in the install dir but not in the source -- we explicitly clean those
+    too via a pre-pass below).
+    """
+    source_package_dir = os.path.join(repo_dir, "source_of_truth")
+    if not os.path.isdir(source_package_dir):
+        raise FileNotFoundError(
+            f"Expected source_of_truth/ at {source_package_dir}; run install.py "
+            "from the repo root."
+        )
+    destination_package_dir = os.path.join(install_dir, "source_of_truth")
+    if os.path.isdir(destination_package_dir):
+        # Wipe stale files from a prior install before re-copying so renamed
+        # or removed modules don't linger.
+        shutil.rmtree(destination_package_dir)
+    shutil.copytree(
+        source_package_dir, destination_package_dir,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    print(f"  copied package -> {destination_package_dir}")
+    return destination_package_dir
+
+
+def write_wrapper_scripts(install_dir):
+    """Wrappers add the install_dir itself to sys.path so they import the
+    copied source_of_truth/ package living next to them.
+    """
     os.makedirs(install_dir, exist_ok=True)
     user_hook_path = os.path.join(install_dir, USER_PROMPT_SUBMIT_HOOK_FILENAME)
     post_hook_path = os.path.join(install_dir, POST_TOOL_USE_HOOK_FILENAME)
     with open(user_hook_path, "w") as f:
-        f.write(USER_PROMPT_SUBMIT_HOOK_TEMPLATE.format(package_dir=package_dir))
+        f.write(USER_PROMPT_SUBMIT_HOOK_TEMPLATE.format(package_dir=install_dir))
     with open(post_hook_path, "w") as f:
-        f.write(POST_TOOL_USE_HOOK_TEMPLATE.format(package_dir=package_dir))
+        f.write(POST_TOOL_USE_HOOK_TEMPLATE.format(package_dir=install_dir))
     if platform.system() != "Windows":
         os.chmod(user_hook_path, 0o755)
         os.chmod(post_hook_path, 0o755)
@@ -150,20 +182,25 @@ def write_settings_json(path, data):
 
 
 def main():
-    package_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
     install_dir = install_dir_path()
     settings_path = settings_json_path()
     python_launcher = python_launcher_for_current_platform()
 
-    print(f"Package dir: {package_dir}")
+    print(f"Repo dir:    {repo_dir}")
     print(f"Install dir: {install_dir}")
     print(f"Settings:    {settings_path}\n")
 
-    print("Step 1: write hook wrapper scripts")
-    user_hook_path, post_hook_path = write_wrapper_scripts(install_dir, package_dir)
+    print("Step 1: copy source_of_truth/ package into install dir")
+    os.makedirs(install_dir, exist_ok=True)
+    copy_app_package_into_install_dir(repo_dir, install_dir)
     print()
 
-    print("Step 2: update ~/.claude/settings.json")
+    print("Step 2: write hook wrapper scripts")
+    user_hook_path, post_hook_path = write_wrapper_scripts(install_dir)
+    print()
+
+    print("Step 3: update ~/.claude/settings.json")
     settings_data = load_or_init_settings_json(settings_path)
     user_command = f'{python_launcher} "{user_hook_path}"'
     post_command = f'{python_launcher} "{post_hook_path}"'
