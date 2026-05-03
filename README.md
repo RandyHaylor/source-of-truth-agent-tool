@@ -101,30 +101,36 @@ Tool sandbox: `--allowed-tools Read,WebFetch,WebSearch` and `--add-dir <project-
 
 ## Hook installation
 
-Add to `~/.claude/settings.json`:
+The hooks are global (they fire on every Claude Code session) but self-gate on project membership — they silently no-op for any session whose `session_id` is not in a project's `member_sessions` list. Safe to leave installed.
+
+Because the hooks must be findable from any cwd in any session, install thin wrapper scripts that do their own `sys.path` setup and swallow all errors (so unrelated sessions never see import errors).
+
+1. Copy these wrappers somewhere absolute, e.g. `~/.claude/hooks/`:
+   - `source_of_truth_user_prompt_submit_hook.py`
+   - `source_of_truth_post_tool_use_hook.py`
+
+   Each is a small file that inserts the package directory into `sys.path` and calls into either `source_of_truth.cli_entrypoint._handle_user_prompt_submit_hook` or `source_of_truth.post_tool_use_show_messages_to_raw_input_sender._main`. On any exception (missing package, malformed stdin, etc.) they emit `{}` and exit 0.
+
+2. Register them in `~/.claude/settings.json`:
 
 ```json
 {
   "hooks": {
     "UserPromptSubmit": [
-      {"hooks": [{
+      {"matcher": "*", "hooks": [{
         "type": "command",
-        "command": "python3 -m source_of_truth.cli_entrypoint user-prompt-submit-hook",
-        "cwd": "/home/aikenyon/ai_skills_agents_resources/source-of-truth"
+        "command": "python3 /home/aikenyon/.claude/hooks/source_of_truth_user_prompt_submit_hook.py"
       }]}
     ],
     "PostToolUse": [
       {"matcher": "Bash", "hooks": [{
         "type": "command",
-        "command": "python3 -m source_of_truth.post_tool_use_show_messages_to_raw_input_sender",
-        "cwd": "/home/aikenyon/ai_skills_agents_resources/source-of-truth"
+        "command": "python3 /home/aikenyon/.claude/hooks/source_of_truth_post_tool_use_hook.py"
       }]}
     ]
   }
 }
 ```
-
-Both hooks are global but self-gate via the project membership check, so they no-op for any session not registered to a source-of-truth project.
 
 ## Initializing a project
 
