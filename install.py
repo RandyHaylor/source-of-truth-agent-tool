@@ -132,12 +132,51 @@ def load_or_init_settings_json(path):
     return json.loads(content) if content else {}
 
 
-def hook_event_already_has_entry_for_install_dir(settings_data, hook_event_name):
+def remove_stale_source_of_truth_hook_entries(
+    settings_data, hook_event_name, install_dir_canonical
+):
+    """Remove any pre-existing hook entries that mention SKILL_INSTALL_DIR_NAME
+    but do NOT point at the current install_dir. This is the duplicate-prevention
+    guard: install.py never adds an entry alongside a stale one for the same tool.
+
+    Returns count of removed entries.
+    """
+    hooks_root = settings_data.get("hooks")
+    if not isinstance(hooks_root, dict):
+        return 0
+    event_list = hooks_root.get(hook_event_name)
+    if not isinstance(event_list, list):
+        return 0
+    removed_count = 0
+    surviving_matcher_entries = []
+    for matcher_entry in event_list:
+        inner_hooks = matcher_entry.get("hooks", [])
+        filtered_inner_hooks = []
+        for hook_item in inner_hooks:
+            command_text = hook_item.get("command", "")
+            mentions_our_tool = SKILL_INSTALL_DIR_NAME in command_text
+            points_at_current_install = install_dir_canonical in command_text
+            if mentions_our_tool and not points_at_current_install:
+                removed_count += 1
+                continue
+            filtered_inner_hooks.append(hook_item)
+        if filtered_inner_hooks:
+            matcher_entry["hooks"] = filtered_inner_hooks
+            surviving_matcher_entries.append(matcher_entry)
+    if surviving_matcher_entries:
+        hooks_root[hook_event_name] = surviving_matcher_entries
+    else:
+        hooks_root.pop(hook_event_name, None)
+        if not hooks_root:
+            settings_data.pop("hooks", None)
+    return removed_count
+
+
+def hook_event_already_has_entry_for_install_dir(settings_data, hook_event_name, install_dir_canonical):
     entries = settings_data.get("hooks", {}).get(hook_event_name, [])
     for matcher_entry in entries:
         for hook_item in matcher_entry.get("hooks", []):
-            command_text = hook_item.get("command", "")
-            if "skills" in command_text and SKILL_INSTALL_DIR_NAME in command_text:
+            if install_dir_canonical in hook_item.get("command", ""):
                 return True
     return False
 
@@ -231,14 +270,30 @@ def main():
     post_command = f'{python_launcher} "{post_hook_path}"'
 
     settings_was_modified = False
-    if hook_event_already_has_entry_for_install_dir(settings_data, "UserPromptSubmit"):
+
+    # Duplicate-prevention guard: scrub any pre-existing entries that mention
+    # this tool but do NOT point at the current install dir. Catches stale
+    # entries from a previous install at a different path (e.g. an older
+    # version of install.py that used a different layout).
+    removed_user = remove_stale_source_of_truth_hook_entries(
+        settings_data, "UserPromptSubmit", install_dir
+    )
+    removed_post = remove_stale_source_of_truth_hook_entries(
+        settings_data, "PostToolUse", install_dir
+    )
+    if removed_user + removed_post:
+        print(f"  removed {removed_user} stale UserPromptSubmit + "
+              f"{removed_post} stale PostToolUse entries pointing elsewhere")
+        settings_was_modified = True
+
+    if hook_event_already_has_entry_for_install_dir(settings_data, "UserPromptSubmit", install_dir):
         print("  UserPromptSubmit entry already present -- no change")
     else:
         append_hook_entry(settings_data, "UserPromptSubmit", "*", user_command)
         print(f"  appended UserPromptSubmit: {user_command}")
         settings_was_modified = True
 
-    if hook_event_already_has_entry_for_install_dir(settings_data, "PostToolUse"):
+    if hook_event_already_has_entry_for_install_dir(settings_data, "PostToolUse", install_dir):
         print("  PostToolUse entry already present -- no change")
     else:
         append_hook_entry(settings_data, "PostToolUse", "Bash", post_command)

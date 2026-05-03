@@ -8,13 +8,16 @@ Run **one step per turn**. After each step, summarize what you confirmed and ask
 
 ## Step 0 — Verify install
 
-Check that the install ran. The hooks are installed if both of these exist:
-- `~/.claude/hooks/source-of-truth-agent-tool/source_of_truth/cli_entrypoint.py`
-- An entry in `~/.claude/settings.json` under `hooks.UserPromptSubmit` whose command path contains `source-of-truth-agent-tool`
+Run `python3 ~/.claude/skills/source-of-truth-agent-tool/install.py` (or from wherever the user cloned the repo). It's idempotent — if everything is healthy, every step reports a no-op. If anything's off (stale hook entries, missing wrappers, missing global settings), it heals it.
 
-If either is missing, tell the user to run `python3 install.py` from the cloned repo root, then come back. Do NOT proceed without this.
+After the run, sanity-check that:
+- `~/.claude/skills/source-of-truth-agent-tool/source_of_truth/cli_entrypoint.py` exists
+- `~/.claude/settings.json` has hook entries pointing at the install dir's wrapper scripts
+- `~/.source-of-truth/global-settings.json` exists
 
-If both exist, say so briefly and ask "ready to register your current Claude Code session as a source-of-truth project?"
+If install.py reports any failures or those files are still missing, surface that to the user before proceeding. Do NOT proceed past step 0 with a broken install.
+
+Once healthy, ask "ready to register your current Claude Code session as a source-of-truth project?"
 
 ---
 
