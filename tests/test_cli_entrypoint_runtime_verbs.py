@@ -1,0 +1,152 @@
+"""Tests for the runtime-facing CLI verbs added so the agent has a sanctioned
+invocation surface for the controlled API."""
+from __future__ import annotations
+
+import io
+import json
+import sys
+from unittest.mock import patch
+
+import pytest
+
+from source_of_truth.cli_entrypoint import (
+    _build_per_turn_additional_context_line,
+    _handle_get_node,
+    _handle_search_nodes,
+    _handle_show_tree,
+    _handle_submit_change_set,
+    _resolve_change_set_payload_from_argv_after_project_id,
+)
+from source_of_truth.config import (
+    ProjectSettings,
+    REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
+    save_project_settings,
+)
+from source_of_truth.raw_input_log_writer import append_submission_to_raw_input_log
+from source_of_truth.requirements_tree_store import (
+    load_requirements_tree,
+    save_requirements_tree_atomically,
+)
+from source_of_truth.requirements_tree_node_schema import RequirementsTree
+
+
+def test_per_turn_additional_context_line_is_one_line_with_two_commands():
+    line = _build_per_turn_additional_context_line(project_id="proj-x", raw_input_id=42)
+    assert "\n" not in line, "must be a single line"
+    assert "id:42" in line
+    assert "source-of-truth submit-change-set proj-x --add-top-level 42" in line
+    assert "source-of-truth show-tree proj-x" in line
+    assert "SKILL.md" in line
+
+
+def test_resolve_change_set_payload_short_form_add_top_level():
+    payload = _resolve_change_set_payload_from_argv_after_project_id(
+        ["--add-top-level", "7"]
+    )
+    assert payload["operations"] == [{
+        "op": "add_top_level",
+        "raw_input_reference": {"raw_input_id": 7},
+    }]
+
+
+def test_resolve_change_set_payload_short_form_rejects_non_integer_id():
+    with pytest.raises(ValueError):
+        _resolve_change_set_payload_from_argv_after_project_id(
+            ["--add-top-level", "not-an-int"]
+        )
+
+
+def test_resolve_change_set_payload_from_stdin():
+    stdin_content = json.dumps({
+        "submitter_rationale": "via stdin",
+        "operations": [{"op": "add_top_level", "raw_input_reference": {"raw_input_id": 3}}],
+    })
+    payload = _resolve_change_set_payload_from_argv_after_project_id(
+        ["-"], stdin_text_supplier=lambda: stdin_content,
+    )
+    assert payload["submitter_rationale"] == "via stdin"
+
+
+def test_resolve_change_set_payload_from_atfile(tmp_path):
+    file_path = tmp_path / "cs.json"
+    file_path.write_text(json.dumps({
+        "operations": [{"op": "add_top_level", "raw_input_reference": {"raw_input_id": 9}}],
+    }))
+    payload = _resolve_change_set_payload_from_argv_after_project_id(
+        [f"@{file_path}"]
+    )
+    assert payload["operations"][0]["raw_input_reference"]["raw_input_id"] == 9
+
+
+def test_resolve_change_set_payload_from_raw_json_argv():
+    raw_json = json.dumps({
+        "operations": [{"op": "add_top_level", "raw_input_reference": {"raw_input_id": 5}}],
+    })
+    payload = _resolve_change_set_payload_from_argv_after_project_id([raw_json])
+    assert payload["operations"][0]["raw_input_reference"]["raw_input_id"] == 5
+
+
+def test_submit_change_set_short_form_applies_under_no_reviewer_mode(capsys):
+    save_project_settings(ProjectSettings(
+        project_id="p-cli", reviewer_mode_override=REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
+    ))
+    log_result = append_submission_to_raw_input_log("p-cli", "s", "yes", "")
+    raw_input_id = log_result["raw_input_id"]
+    return_code = _handle_submit_change_set(["p-cli", "--add-top-level", str(raw_input_id)])
+    captured = capsys.readouterr()
+    assert return_code == 0
+    payload = json.loads(captured.out)
+    assert payload["approved"] is True
+    assert payload["applied_operation_count"] == 1
+    tree = load_requirements_tree("p-cli")
+    assert len(tree.nodes_by_id) == 1
+
+
+def test_show_tree_dumps_full_tree_json(capsys):
+    save_requirements_tree_atomically(RequirementsTree.empty_for_project("p-show"))
+    rc = _handle_show_tree(["p-show"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    parsed = json.loads(captured.out)
+    assert parsed["project_id"] == "p-show"
+    assert parsed["nodes_by_id"] == {}
+
+
+def test_get_node_returns_node_payload_for_existing_id(capsys):
+    save_project_settings(ProjectSettings(
+        project_id="p-get", reviewer_mode_override=REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
+    ))
+    log_result = append_submission_to_raw_input_log("p-get", "s", "x", "")
+    _handle_submit_change_set(["p-get", "--add-top-level", str(log_result["raw_input_id"])])
+    capsys.readouterr()  # discard submit output
+
+    rc = _handle_get_node(["p-get", "1"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    parsed = json.loads(captured.out)
+    assert parsed["node"]["node_id"] == 1
+
+
+def test_get_node_returns_error_for_missing_id(capsys):
+    save_requirements_tree_atomically(RequirementsTree.empty_for_project("p-missing"))
+    rc = _handle_get_node(["p-missing", "999"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    parsed = json.loads(captured.out)
+    assert "not found" in parsed["error"]
+
+
+def test_search_nodes_returns_matches_payload(capsys):
+    save_project_settings(ProjectSettings(
+        project_id="p-search", reviewer_mode_override=REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
+    ))
+    log_result = append_submission_to_raw_input_log("p-search", "s", "haystack needle haystack", "")
+    _handle_submit_change_set(["p-search", "--add-top-level", str(log_result["raw_input_id"])])
+    capsys.readouterr()
+
+    rc = _handle_search_nodes(["p-search", "needle"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    parsed = json.loads(captured.out)
+    assert isinstance(parsed.get("matches"), list)
+    assert len(parsed["matches"]) == 1

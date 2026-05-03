@@ -5,9 +5,10 @@ Cross-platform uninstaller for source-of-truth-agent-tool.
 Reverses what install.py did:
   1. Removes ~/.claude/skills/source-of-truth-agent-tool/ entirely (skill
      manifest, wrapper scripts, copied package).
-  2. Removes any UserPromptSubmit or PostToolUse hook entry from
-     ~/.claude/settings.json whose command references that install dir.
-  3. Backs up settings.json before changing it.
+  2. Removes the on-PATH `source-of-truth` (or `.bat`) stub.
+  3. Removes any UserPromptSubmit or PostToolUse hook entry from
+     ~/.claude/settings.json whose command references the install dir.
+  4. Backs up settings.json before changing it.
 
 Does NOT delete ~/.source-of-truth/ (raw input logs, requirements trees,
 project settings, global-settings.json). Remove that directory manually
@@ -16,6 +17,7 @@ if you want to wipe state.
 import datetime
 import json
 import os
+import platform
 import shutil
 
 
@@ -28,6 +30,19 @@ def home_claude_dir():
 
 def install_dir_path():
     return os.path.join(home_claude_dir(), "skills", SKILL_INSTALL_DIR_NAME)
+
+
+def path_stub_target_directory_for_current_platform():
+    if platform.system() == "Windows":
+        return os.path.join(
+            os.path.expanduser("~"),
+            "AppData", "Local", "Microsoft", "WindowsApps",
+        )
+    return os.path.join(os.path.expanduser("~"), ".local", "bin")
+
+
+def path_stub_filename_for_current_platform():
+    return "source-of-truth.bat" if platform.system() == "Windows" else "source-of-truth"
 
 
 def settings_json_path():
@@ -99,10 +114,22 @@ def main():
         shutil.rmtree(install_dir)
         print(f"  removed: {install_dir}")
     else:
-        print(f"  not present — nothing to remove at {install_dir}")
+        print(f"  not present -- nothing to remove at {install_dir}")
     print()
 
-    print("Step 2: scrub hook entries from settings.json")
+    print("Step 2: remove on-PATH `source-of-truth` stub")
+    path_stub_path = os.path.join(
+        path_stub_target_directory_for_current_platform(),
+        path_stub_filename_for_current_platform(),
+    )
+    if os.path.isfile(path_stub_path):
+        os.remove(path_stub_path)
+        print(f"  removed: {path_stub_path}")
+    else:
+        print(f"  not present -- nothing to remove at {path_stub_path}")
+    print()
+
+    print("Step 3: scrub hook entries from settings.json")
     settings_data = load_settings_json_if_exists(settings_path)
     if settings_data is None:
         print("  settings.json does not exist — nothing to edit")
