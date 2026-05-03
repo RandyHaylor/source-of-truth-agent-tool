@@ -1,16 +1,17 @@
 """Unit tests for ClaudeCodeReviewerSessionHandleViaResume.
 
-We do NOT actually launch the claude CLI here; we patch subprocess.Popen with a
-fake that yields scripted NDJSON lines, so we can verify command construction,
-streaming-event capture, and result parsing without network or auth.
+We do NOT actually launch the claude CLI here. We patch subprocess.Popen with a
+fake whose stdout is a real OS-level pipe (so select.select works against it),
+preloaded with scripted NDJSON lines.
 """
 from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 from typing import Iterable
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -19,30 +20,45 @@ from source_of_truth.ai_cli_adapter_claude_code import (
 )
 
 
-class _FakePopenYieldingScriptedStdoutLines:
-    """Stand-in for subprocess.Popen with a deterministic stdout NDJSON stream."""
+class _FakePopenWithRealPipeStdout:
+    """Stand-in for subprocess.Popen with a real-pipe-backed stdout/stderr.
+
+    select.select in production code requires a real fileno(), so we use os.pipe()
+    instead of io.StringIO. We pre-write all scripted lines into the write end,
+    then close it so EOF is reached after the test consumes everything.
+    """
 
     def __init__(self, scripted_stdout_lines: Iterable[str]) -> None:
-        joined_stdout_text = "".join(line if line.endswith("\n") else line + "\n"
-                                     for line in scripted_stdout_lines)
-        self.stdout = io.StringIO(joined_stdout_text)
-        self.stderr = io.StringIO("")
-        self._already_polled_alive_once = False
+        stdout_read_fd, stdout_write_fd = os.pipe()
+        joined_text = "".join(
+            line if line.endswith("\n") else line + "\n"
+            for line in scripted_stdout_lines
+        )
+        os.write(stdout_write_fd, joined_text.encode("utf-8"))
+        os.close(stdout_write_fd)  # signal EOF to the reader
+        self.stdout = os.fdopen(stdout_read_fd, "r", buffering=1)
+
+        stderr_read_fd, stderr_write_fd = os.pipe()
+        os.close(stderr_write_fd)  # empty stderr -> immediate EOF
+        self.stderr = os.fdopen(stderr_read_fd, "r", buffering=1)
+
+        # stdin is now used by production code to pipe the prompt; capture writes.
+        self.stdin = io.StringIO()
+
         self.kill_was_called = False
+        self._terminated = False
 
     def poll(self):
-        # First poll returns "still running" so the readline loop drains stdout;
-        # subsequent polls return 0 so it exits cleanly.
-        if not self._already_polled_alive_once:
-            self._already_polled_alive_once = True
-            return 0
+        # Always report "exited cleanly" so the reader breaks out promptly
+        # once stdout EOF is reached.
         return 0
 
     def kill(self):
         self.kill_was_called = True
+        self._terminated = True
 
     def terminate(self):
-        self.kill_was_called = True
+        self.kill()
 
 
 def _build_handle(priming_already_done: bool = False, captured_events: list | None = None):
@@ -56,6 +72,7 @@ def _build_handle(priming_already_done: bool = False, captured_events: list | No
         reviewer_model_name="claude-haiku-4-5-20251001",
         streaming_event_appender=appender,
         per_call_timeout_seconds=10,
+        heartbeat_after_silent_seconds=999,  # disable heartbeat for fast tests
     ), captured_events
 
 
@@ -65,7 +82,7 @@ def test_first_call_uses_session_id_then_subsequent_calls_use_resume():
 
     def fake_popen(command_list, **kwargs):
         captured_command_lines.append(list(command_list))
-        return _FakePopenYieldingScriptedStdoutLines([
+        return _FakePopenWithRealPipeStdout([
             json.dumps({"type": "result", "result": "ok", "is_error": False, "total_cost_usd": 0}),
         ])
 
@@ -81,7 +98,6 @@ def test_first_call_uses_session_id_then_subsequent_calls_use_resume():
     assert "--resume" in second_call_command
     assert "--session-id" not in second_call_command
 
-    # Both calls request stream-json + partial messages, pass --model, restrict tools.
     for cmd in (first_call_command, second_call_command):
         assert "--output-format" in cmd
         assert "stream-json" in cmd
@@ -92,6 +108,10 @@ def test_first_call_uses_session_id_then_subsequent_calls_use_resume():
         assert "Read" in cmd
         assert "--add-dir" in cmd
         assert "/tmp/example" in cmd
+        # The prompt must NOT be a positional argument -- variadic --add-dir
+        # would swallow it. Prompt is now piped via stdin instead.
+        assert "first prompt" not in cmd
+        assert "second prompt" not in cmd
 
 
 def test_returns_result_text_from_final_result_event():
@@ -104,13 +124,13 @@ def test_returns_result_text_from_final_result_event():
     ]
     with patch(
         "source_of_truth.ai_cli_adapter_claude_code.subprocess.Popen",
-        side_effect=lambda *a, **k: _FakePopenYieldingScriptedStdoutLines(fake_lines),
+        side_effect=lambda *a, **k: _FakePopenWithRealPipeStdout(fake_lines),
     ):
         response_text = handle.send_prompt_and_await_response("prompt")
     assert response_text == "the verdict reply"
 
 
-def test_streaming_appender_receives_every_ndjson_line_in_order():
+def test_streaming_appender_receives_every_ndjson_line_and_launch_event():
     handle, captured_events = _build_handle()
     fake_lines = [
         json.dumps({"type": "system", "subtype": "init"}),
@@ -120,7 +140,7 @@ def test_streaming_appender_receives_every_ndjson_line_in_order():
     ]
     with patch(
         "source_of_truth.ai_cli_adapter_claude_code.subprocess.Popen",
-        side_effect=lambda *a, **k: _FakePopenYieldingScriptedStdoutLines(fake_lines),
+        side_effect=lambda *a, **k: _FakePopenWithRealPipeStdout(fake_lines),
     ):
         handle.send_prompt_and_await_response("prompt")
 
@@ -129,6 +149,11 @@ def test_streaming_appender_receives_every_ndjson_line_in_order():
     assert "init" in streamed_line_event_bodies[0]
     assert "partial reasoning" in streamed_line_event_bodies[1]
     assert "final" in streamed_line_event_bodies[2]
+
+    launch_events = [body for kind, body in captured_events if kind == "SUBPROCESS_LAUNCH"]
+    assert len(launch_events) == 1
+    assert "command=" in launch_events[0]
+    assert "timeout_seconds=" in launch_events[0]
 
     final_result_event = next(
         (body for kind, body in captured_events if kind == "FINAL_RESULT"), None
@@ -147,7 +172,7 @@ def test_falls_back_to_concatenated_assistant_text_when_result_field_absent():
     ]
     with patch(
         "source_of_truth.ai_cli_adapter_claude_code.subprocess.Popen",
-        side_effect=lambda *a, **k: _FakePopenYieldingScriptedStdoutLines(fake_lines),
+        side_effect=lambda *a, **k: _FakePopenWithRealPipeStdout(fake_lines),
     ):
         response_text = handle.send_prompt_and_await_response("prompt")
     assert response_text == "alpha beta"
@@ -158,3 +183,49 @@ def test_terminate_marks_handle_not_alive():
     assert handle.is_alive() is True
     handle.terminate()
     assert handle.is_alive() is False
+
+
+def test_heartbeat_event_is_emitted_when_no_stream_events_for_threshold_seconds():
+    """Heartbeat fires when stdout is silent past heartbeat_after_silent_seconds."""
+    captured_events: list = []
+    handle = ClaudeCodeReviewerSessionHandleViaResume(
+        reviewer_session_id="x",
+        allowed_tool_names=[],
+        allowed_read_paths=[],
+        priming_already_done=False,
+        reviewer_model_name="claude-haiku-4-5-20251001",
+        streaming_event_appender=lambda k, b: captured_events.append((k, b)),
+        per_call_timeout_seconds=3.0,
+        heartbeat_after_silent_seconds=1.0,
+    )
+
+    # Fake Popen whose stdout pipe never gets any data and whose poll() reports
+    # "still running" so we exit only via timeout.
+    class _SilentForeverPopen:
+        def __init__(self):
+            r, w = os.pipe()  # never writing to w
+            self._w = w
+            self.stdout = os.fdopen(r, "r", buffering=1)
+            r2, w2 = os.pipe()
+            self._w2 = w2
+            self.stderr = os.fdopen(r2, "r", buffering=1)
+            self.stdin = io.StringIO()
+
+        def poll(self):
+            return None  # still running
+
+        def kill(self):
+            os.close(self._w)
+            os.close(self._w2)
+
+    with patch(
+        "source_of_truth.ai_cli_adapter_claude_code.subprocess.Popen",
+        side_effect=lambda *a, **k: _SilentForeverPopen(),
+    ):
+        result_text = handle.send_prompt_and_await_response("prompt")
+
+    heartbeat_events = [body for kind, body in captured_events if kind == "WAITING_FOR_EVENT"]
+    timeout_events = [body for kind, body in captured_events if kind == "TIMEOUT"]
+    assert len(heartbeat_events) >= 1
+    assert len(timeout_events) == 1
+    assert "timed out" in result_text

@@ -177,10 +177,15 @@ class RequirementsTreeControlledApi:
         verdict: ReviewerVerdict = request_change_set_review(
             self._reviewer_lifecycle, change_set.to_json_dict(), self._project_id
         )
-        if not verdict.approved:
+        approved_indices = verdict.approved_operation_indices()
+        rejected_with_reasons = verdict.rejected_operation_indices_with_reasons()
+
+        # If no per-op verdicts at all, fail the whole batch.
+        if not verdict.per_operation_verdicts:
             rejection_message = (
-                f"{operation_count} requirement op(s) REJECTED by reviewer. "
-                f"Notes: {verdict.message}. Full thoughts: {thinking_log_path}"
+                f"{operation_count} requirement op(s) REJECTED by reviewer "
+                f"(no per-op verdicts returned). Notes: {verdict.message}. "
+                f"Full thoughts: {thinking_log_path}"
             )
             add_pending_message_for_raw_input_sender(rejection_message, target_project_id=self._project_id)
             return ChangeSetSubmissionResult(
@@ -190,31 +195,48 @@ class RequirementsTreeControlledApi:
                 message_for_raw_input_sender=f"[source-of-truth] {rejection_message}",
                 reviewer_thinking_log_path=thinking_log_path,
             )
-        try:
-            current_tree = load_requirements_tree(self._project_id)
-            new_tree = apply_change_set_to_tree(current_tree, change_set.operations)
-            save_requirements_tree_atomically(new_tree)
-        except ChangeSetApplicationError as exc:
-            return ChangeSetSubmissionResult(
-                approved=False,
-                reviewer_message=f"Approved by reviewer but failed to apply: {exc}",
-                applied_operation_count=0,
-                message_for_raw_input_sender=(
-                    f"[source-of-truth] Reviewer APPROVED but apply failed: {exc}. "
-                    f"Tree unchanged. Reviewer thoughts: {thinking_log_path}"
-                ),
-                reviewer_thinking_log_path=thinking_log_path,
+
+        approved_operations_in_original_order = [
+            change_set.operations[i] for i in sorted(approved_indices)
+        ]
+
+        # Apply only the approved subset; rejections are reported back to the agent.
+        if approved_operations_in_original_order:
+            try:
+                current_tree = load_requirements_tree(self._project_id)
+                new_tree = apply_change_set_to_tree(
+                    current_tree, approved_operations_in_original_order
+                )
+                save_requirements_tree_atomically(new_tree)
+            except ChangeSetApplicationError as exc:
+                error_message = (
+                    f"Reviewer approved {len(approved_operations_in_original_order)} op(s) "
+                    f"but apply failed: {exc}. Tree unchanged. Thoughts: {thinking_log_path}"
+                )
+                add_pending_message_for_raw_input_sender(error_message, target_project_id=self._project_id)
+                return ChangeSetSubmissionResult(
+                    approved=False,
+                    reviewer_message=str(exc),
+                    applied_operation_count=0,
+                    message_for_raw_input_sender=f"[source-of-truth] {error_message}",
+                    reviewer_thinking_log_path=thinking_log_path,
+                )
+
+        rejection_summary_text = ""
+        if rejected_with_reasons:
+            rejection_summary_text = " Rejected ops: " + "; ".join(
+                f"op[{i}]: {reason}" for i, reason in rejected_with_reasons
             )
-        approval_message = (
-            f"{operation_count} requirement op(s) APPROVED + applied. "
-            f"Notes: {verdict.message}. Thoughts log: {thinking_log_path}"
+        outcome_message = (
+            f"Reviewer applied {len(approved_operations_in_original_order)}/{operation_count} op(s). "
+            f"Notes: {verdict.message}.{rejection_summary_text} Thoughts log: {thinking_log_path}"
         )
-        add_pending_message_for_raw_input_sender(approval_message, target_project_id=self._project_id)
+        add_pending_message_for_raw_input_sender(outcome_message, target_project_id=self._project_id)
         return ChangeSetSubmissionResult(
-            approved=True,
-            reviewer_message=verdict.message,
-            applied_operation_count=operation_count,
-            message_for_raw_input_sender=f"[source-of-truth] {approval_message}",
+            approved=verdict.approved,
+            reviewer_message=verdict.message + rejection_summary_text,
+            applied_operation_count=len(approved_operations_in_original_order),
+            message_for_raw_input_sender=f"[source-of-truth] {outcome_message}",
             reviewer_thinking_log_path=thinking_log_path,
         )
 
@@ -258,10 +280,10 @@ class RequirementsTreeControlledApi:
         verdict: ReviewerVerdict = request_change_set_review(
             self._reviewer_lifecycle, merged_change_set_payload, self._project_id
         )
-        if not verdict.approved:
+        if not verdict.per_operation_verdicts:
             rejection_message = (
-                f"Flushed batch of {operation_count} op(s) REJECTED by reviewer. "
-                f"Notes: {verdict.message}. Full thoughts: {thinking_log_path}"
+                f"Flushed batch of {operation_count} op(s) REJECTED by reviewer "
+                f"(no per-op verdicts). Notes: {verdict.message}. Thoughts: {thinking_log_path}"
             )
             add_pending_message_for_raw_input_sender(rejection_message, target_project_id=self._project_id)
             return ChangeSetSubmissionResult(
@@ -271,30 +293,45 @@ class RequirementsTreeControlledApi:
                 message_for_raw_input_sender=f"[source-of-truth] {rejection_message}",
                 reviewer_thinking_log_path=thinking_log_path,
             )
-        try:
-            current_tree = load_requirements_tree(self._project_id)
-            new_tree = apply_change_set_to_tree(current_tree, merged_operations)
-            save_requirements_tree_atomically(new_tree)
-        except ChangeSetApplicationError as exc:
-            return ChangeSetSubmissionResult(
-                approved=False,
-                reviewer_message=f"Approved by reviewer but failed to apply: {exc}",
-                applied_operation_count=0,
-                message_for_raw_input_sender=(
-                    f"[source-of-truth] Reviewer APPROVED flushed batch but apply failed: {exc}. "
-                    f"Tree unchanged. Reviewer thoughts: {thinking_log_path}"
-                ),
-                reviewer_thinking_log_path=thinking_log_path,
+
+        approved_indices_for_flush = sorted(verdict.approved_operation_indices())
+        rejected_with_reasons_for_flush = verdict.rejected_operation_indices_with_reasons()
+        approved_operations_for_flush = [
+            merged_operations[i] for i in approved_indices_for_flush
+        ]
+
+        if approved_operations_for_flush:
+            try:
+                current_tree = load_requirements_tree(self._project_id)
+                new_tree = apply_change_set_to_tree(current_tree, approved_operations_for_flush)
+                save_requirements_tree_atomically(new_tree)
+            except ChangeSetApplicationError as exc:
+                return ChangeSetSubmissionResult(
+                    approved=False,
+                    reviewer_message=f"Approved by reviewer but failed to apply: {exc}",
+                    applied_operation_count=0,
+                    message_for_raw_input_sender=(
+                        f"[source-of-truth] Reviewer APPROVED flushed batch but apply failed: {exc}. "
+                        f"Tree unchanged. Reviewer thoughts: {thinking_log_path}"
+                    ),
+                    reviewer_thinking_log_path=thinking_log_path,
+                )
+
+        rejection_summary_text_for_flush = ""
+        if rejected_with_reasons_for_flush:
+            rejection_summary_text_for_flush = " Rejected ops: " + "; ".join(
+                f"op[{i}]: {reason}" for i, reason in rejected_with_reasons_for_flush
             )
         approval_message = (
-            f"Flushed batch of {operation_count} op(s) APPROVED + applied. "
-            f"Notes: {verdict.message}. Thoughts log: {thinking_log_path}"
+            f"Flushed batch: applied {len(approved_operations_for_flush)}/{operation_count} op(s). "
+            f"Notes: {verdict.message}.{rejection_summary_text_for_flush} "
+            f"Thoughts log: {thinking_log_path}"
         )
         add_pending_message_for_raw_input_sender(approval_message, target_project_id=self._project_id)
         return ChangeSetSubmissionResult(
-            approved=True,
-            reviewer_message=verdict.message,
-            applied_operation_count=operation_count,
+            approved=verdict.approved,
+            reviewer_message=verdict.message + rejection_summary_text_for_flush,
+            applied_operation_count=len(approved_operations_for_flush),
             message_for_raw_input_sender=f"[source-of-truth] {approval_message}",
             reviewer_thinking_log_path=thinking_log_path,
         )

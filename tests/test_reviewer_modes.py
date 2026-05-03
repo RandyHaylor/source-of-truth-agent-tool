@@ -101,7 +101,10 @@ def test_deferred_mode_queues_change_set_without_calling_reviewer_or_applying():
 
 
 def test_deferred_flush_calls_reviewer_once_with_merged_ops_and_applies_on_approval():
-    from source_of_truth.requirements_modification_reviewer import ReviewerVerdict
+    from source_of_truth.requirements_modification_reviewer import (
+        PerOperationVerdict,
+        ReviewerVerdict,
+    )
 
     save_project_settings(ProjectSettings(
         project_id="p-defer-flush",
@@ -114,9 +117,17 @@ def test_deferred_flush_calls_reviewer_once_with_merged_ops_and_applies_on_appro
     api.submit_requirements_tree_change_set(_build_one_op_change_set(entry_b))
     assert count_pending_deferred_change_sets("p-defer-flush") == 2
 
+    full_approval_verdict = ReviewerVerdict(
+        approved=True, message="ok",
+        per_operation_verdicts=[
+            PerOperationVerdict(operation_index=0, approved=True),
+            PerOperationVerdict(operation_index=1, approved=True),
+        ],
+        raw_response_text="",
+    )
     with patch(
         "source_of_truth.requirements_tree_controlled_api.request_change_set_review",
-        return_value=ReviewerVerdict(approved=True, message="ok", raw_response_text=""),
+        return_value=full_approval_verdict,
     ) as mock_review:
         flush_result = api.flush_deferred_change_sets_for_review()
 
@@ -144,7 +155,10 @@ def test_deferred_flush_with_empty_queue_returns_no_op_success():
 
 
 def test_deferred_flush_rejection_keeps_tree_unchanged_and_does_not_requeue():
-    from source_of_truth.requirements_modification_reviewer import ReviewerVerdict
+    from source_of_truth.requirements_modification_reviewer import (
+        PerOperationVerdict,
+        ReviewerVerdict,
+    )
 
     save_project_settings(ProjectSettings(
         project_id="p-defer-reject",
@@ -154,15 +168,67 @@ def test_deferred_flush_rejection_keeps_tree_unchanged_and_does_not_requeue():
     api = RequirementsTreeControlledApi("p-defer-reject", _StubAdapter())
     api.submit_requirements_tree_change_set(_build_one_op_change_set(entry_id))
 
+    full_rejection_verdict = ReviewerVerdict(
+        approved=False, message="nope",
+        per_operation_verdicts=[
+            PerOperationVerdict(operation_index=0, approved=False, reason="bad ref"),
+        ],
+        raw_response_text="",
+    )
     with patch(
         "source_of_truth.requirements_tree_controlled_api.request_change_set_review",
-        return_value=ReviewerVerdict(approved=False, message="nope", raw_response_text=""),
+        return_value=full_rejection_verdict,
     ):
         result = api.flush_deferred_change_sets_for_review()
 
     assert result.approved is False
-    assert "REJECTED" in result.message_for_raw_input_sender
     tree = load_requirements_tree("p-defer-reject")
     assert len(tree.nodes_by_id) == 0
-    # Queue stays drained even on rejection (would otherwise grow unbounded).
     assert count_pending_deferred_change_sets("p-defer-reject") == 0
+
+
+def test_partial_per_op_verdicts_apply_only_approved_ops_in_live_mode():
+    """In live mode, when reviewer approves some ops and rejects others, only approved ones land."""
+    from source_of_truth.requirements_modification_reviewer import (
+        PerOperationVerdict,
+        ReviewerVerdict,
+    )
+    from source_of_truth.config import REVIEWER_MODE_LIVE_REVIEW_EVERY_SUBMIT
+
+    save_project_settings(ProjectSettings(
+        project_id="p-partial",
+        reviewer_mode_override=REVIEWER_MODE_LIVE_REVIEW_EVERY_SUBMIT,
+    ))
+    entry_a = _seed_one_short_raw_entry("p-partial", "s")
+    entry_b = _seed_one_short_raw_entry("p-partial", "s")
+    entry_c = _seed_one_short_raw_entry("p-partial", "s")
+    api = RequirementsTreeControlledApi("p-partial", _StubAdapter())
+    three_op_change_set = {
+        "submitter_rationale": "test partial",
+        "operations": [
+            {"op": "add_top_level", "raw_input_reference": {"raw_input_id": entry_a}},
+            {"op": "add_top_level", "raw_input_reference": {"raw_input_id": entry_b}},
+            {"op": "add_top_level", "raw_input_reference": {"raw_input_id": entry_c}},
+        ],
+    }
+    partial_verdict = ReviewerVerdict(
+        approved=False,  # not all approved
+        message="approved 2 of 3",
+        per_operation_verdicts=[
+            PerOperationVerdict(operation_index=0, approved=True),
+            PerOperationVerdict(operation_index=1, approved=False, reason="dupe"),
+            PerOperationVerdict(operation_index=2, approved=True),
+        ],
+        raw_response_text="",
+    )
+    with patch(
+        "source_of_truth.requirements_tree_controlled_api.request_change_set_review",
+        return_value=partial_verdict,
+    ):
+        result = api.submit_requirements_tree_change_set(three_op_change_set)
+
+    assert result.approved is False  # not unanimous
+    assert result.applied_operation_count == 2
+    assert "op[1]: dupe" in result.reviewer_message
+    tree = load_requirements_tree("p-partial")
+    assert len(tree.nodes_by_id) == 2
