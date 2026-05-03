@@ -1,117 +1,138 @@
 # source-of-truth-agent-tool
 
-A Python system that prevents AI coding agents from drifting, paraphrasing, or inventing requirements over long projects.
+**Stop your AI coding agent from drifting away from what you actually asked for.**
 
-## The idea
+## The problem
 
-Every raw input the agent receives (typically from a human user, but the system is agnostic — could be an upstream agent) is captured verbatim. Requirements are then represented as a tree whose nodes contain *only references back to those raw quotes* — never agent-paraphrased text. An optional second AI agent reviews every proposed change to that tree, so the only path for hallucination to enter requirements is via deliberately misleading quote selection — which the reviewer catches.
+You ask an AI agent for X. Twenty turns later it has paraphrased X into something subtly different and is now defending the paraphrase. By turn fifty the original requirement is gone — never written down verbatim, only restated through the agent's filter. There is no way to point at a single line and say "this is what was asked for."
 
-The system is cross-AI-CLI capable via a thin adapter (Claude Code is the first concrete adapter; others can be added).
+This tool fixes that.
 
-## Storage layout
+## How it fixes it
 
+1. **Every raw input you send is captured verbatim** to a per-project log file at write-time, untouched.
+2. The agent is allowed to maintain a **requirements tree**, but every node in that tree is **only a reference to a verbatim quote** in the log — never agent prose. Nothing the agent can write goes into the tree directly.
+3. Every proposed edit to the tree (add, move, remove, modify reference, reorder) is sent to a **separate AI reviewer subprocess** (Haiku by default — fast and cheap) which returns a per-operation approve/reject verdict with reasons.
+4. Only approved operations land on disk. Rejected ones come back to the agent with the reviewer's reasoning.
+5. The agent receives a small top-level summary of the tree on every turn, plus brief usage instructions.
+
+The result: the only path for a hallucinated requirement to enter the tree is the agent **deliberately mis-citing a real quote**, which the reviewer catches by comparing the cited slice against the surrounding context. Pure invention is structurally impossible.
+
+## Benefits
+
+- **Verbatim audit trail.** Every requirement in the tree resolves to a real timestamped quote you typed.
+- **No paraphrase rot.** Agent cannot rewrite or summarize requirements into the tree.
+- **Two-AI gate.** A second model (different role, fresh context) reviews every proposed change.
+- **Three speed tiers.** Live review on every submit, batched review on demand (deferred mode), or no review at all (none mode) when you want raw speed and trust the agent.
+- **Per-operation verdicts.** The reviewer can approve some ops and reject others in the same batch.
+- **Streamed reviewer log.** Watch the reviewer's NDJSON event stream live in `reviewer_thinking.log` as it works.
+- **Cross-AI-CLI ready.** Claude Code is the first concrete adapter; the interface is small enough to plug another CLI under it.
+- **Self-gating global hooks.** Install once; hooks fire on every Claude Code session but silently no-op for any session not registered to a project.
+
+## Quickstart
+
+Requires Python 3.10+ and (for the reviewer) the `claude` CLI logged in.
+
+```bash
+# 1. Clone
+git clone git@github.com:RandyHaylor/source-of-truth-agent-tool.git
+cd source-of-truth-agent-tool
+
+# 2. (Optional but recommended) Drop a small wrapper on PATH
+cat > ~/.local/bin/sot <<EOF
+#!/usr/bin/env bash
+exec python3 -c "import sys; sys.path.insert(0, '$(pwd)'); from source_of_truth.cli_entrypoint import _main; sys.exit(_main())" "\$@"
+EOF
+chmod +x ~/.local/bin/sot
+
+# 3. Run the unit tests
+python3 -m pytest tests/ -q
+
+# 4. Initialize a project for your CURRENT Claude Code session.
+#    Find the session id from ~/.claude/projects/<encoded-cwd>/<session_id>.jsonl
+#    or from your Claude Code UI.
+sot init-and-register <your_session_id> ~/.claude/projects/<encoded-cwd>/<your_session_id>.jsonl
+
+# 5. Pick a reviewer mode. Default is "live" (every submit gets reviewed).
+sot set-mode <your_session_id> live    # or: none, deferred
 ```
-~/.source-of-truth/
-    global-settings.json                              # optional; defaults if absent
-    pending_messages_for_raw_input_sender.jsonl       # global queue (per-message tagged with target_project_id)
-    projects/
-        <project_id>/                                 # project_id = session_id of initializing session
-            project-<project_id>-source-of-truth.json # the requirements tree (sole writer = our app)
-            project-settings.json                     # optional; can override global, also lists member sessions
-            raw_input_log.json                        # rolling log, grouped by session_id
-            reviewer_thinking.log                     # full streamed log of reviewer NDJSON events
-            deferred_change_sets_queue.jsonl          # only used in deferred reviewer mode
+
+After that, install the two global hooks (see "Hook installation" below). With the hooks installed, every user prompt in any registered session is auto-logged, and any reviewer outcome messages auto-surface to you via Claude Code's `systemMessage`.
+
+To use the API from inside an agent's tool calls:
+
+```python
+from source_of_truth.requirements_tree_controlled_api import RequirementsTreeControlledApi
+from source_of_truth.ai_cli_adapter_claude_code import ClaudeCodeAdapter
+
+api = RequirementsTreeControlledApi(project_id, ClaudeCodeAdapter(session_id))
+
+# Capture: agent picks raw_input_id values from the log entries it already
+# saw via the per-turn injection, then proposes a change-set.
+result = api.submit_requirements_tree_change_set({
+    "submitter_rationale": "User just confirmed the haiku-default decision.",
+    "operations": [
+        {"op": "add_top_level",
+         "raw_input_reference": {"raw_input_id": 41}},
+    ],
+})
+print(result.approved, result.reviewer_message)
 ```
 
 ## Reviewer modes
 
-Set via `reviewer_mode` in `global-settings.json` or `reviewer_mode_override` in `project-settings.json`.
+Set via `reviewer_mode` in `~/.source-of-truth/global-settings.json` or `reviewer_mode_override` in any project's `project-settings.json` (use `sot set-mode`).
 
-- `live` (default) — every `submit_requirements_tree_change_set` call hits the reviewer immediately. Safest, slowest, most expensive.
-- `none` — reviewer is never called. Local validation runs (every reference must resolve to a real raw entry, char_range must be in bounds), then the change-set is applied directly. Fastest and cheapest; relies entirely on agent honesty.
-- `deferred` — submits validate locally and queue to disk. The tree is not modified. When the agent calls `flush_deferred_change_sets_for_review()`, all queued change-sets are merged into one and reviewed in a single round-trip, then applied on approval.
+| Mode | Behavior | Use when |
+|------|---------|----------|
+| `live` (default) | Every submit hits the reviewer immediately. | You want maximum safety. |
+| `none` | Reviewer never called. Local validation runs (refs must resolve), then ops apply directly. | You trust the agent and want raw speed. |
+| `deferred` | Submits validate locally and queue. Tree unchanged until the agent calls `flush_deferred_change_sets_for_review()`, which merges all queued ops and reviews in one round-trip. | Agent is doing extended planning and will batch decisions later. |
+
+Live haiku round-trip in steady state is roughly 13–18s per call after a one-time priming step.
 
 ## Reviewer model
 
-Set via `reviewer_model_name` in `global-settings.json` or `reviewer_model_name_override` in `project-settings.json`. Default is `claude-haiku-4-5-20251001` for cost and speed. Override per project to use a stronger model when needed.
+Set via `reviewer_model_name` in `global-settings.json` or `reviewer_model_name_override` per project. Default `claude-haiku-4-5-20251001` for cost and speed. Override per project to use a stronger model when needed.
 
-## Public API (agent-facing)
+## CLI verbs
 
-`source_of_truth.requirements_tree_controlled_api.RequirementsTreeControlledApi(project_id, ai_cli_adapter)`:
-
-- `submit_requirements_tree_change_set(change_set_dict)` — main entry point. Behavior depends on the active reviewer mode.
-- `flush_deferred_change_sets_for_review()` — only meaningful in deferred mode.
-- `search_requirements_nodes(query)` — substring search over resolved quotes and project paths.
-- `get_node_by_id(node_id, include_children=True)` — fetch a node and (optionally) its children.
-- `get_top_level_node()` — render the small top-level summary that gets injected into the agent's context every turn.
-- `add_project_path(filesystem_path)` / `remove_project_path(filesystem_path)` — manage the special project-paths node (paths must exist on disk; the reviewer is bypassed for these because paths are facts, not user statements).
-
-Every API call returns or surfaces the constant `INTERACTION_TIME_AGENT_GUIDANCE` from `config.py` so the agent always has the reminder text close at hand.
-
-## Change-set schema
-
-A change-set is a JSON object:
-
-```json
-{
-  "submitter_rationale": "free-text explanation",
-  "operations": [
-    {"op": "add", "parent_id": 12, "raw_input_reference": {"raw_input_id": 23, "char_range": [120, 180]}},
-    {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 7}},
-    {"op": "reparent", "node_id": 23, "new_parent_id": 33},
-    {"op": "remove", "node_id": 47},
-    {"op": "modify_reference", "node_id": 23, "raw_input_reference": {"raw_input_id": 11}},
-    {"op": "reorder_children", "parent_id": 12, "child_order": [4, 23, 9]}
-  ]
-}
+```bash
+sot init-and-register <session_id> <conversation_path>      # one-shot project setup
+sot init-project       <project_id>                         # init only
+sot add-session        <project_id> <session_id> <conversation_path>
+sot add-path           <project_id> <filesystem_path>       # add to project-paths special node
+sot set-mode           <project_id> live|none|deferred
+sot show-top-level     <project_id>
+sot user-prompt-submit-hook                                 # consumed by the hook wrapper, not by you
 ```
 
-`raw_input_id` is a per-project integer (assigned at log time, starting at 0). It is the only thing needed to identify a quote — session_id and timestamp are stored as data on the entry but are not part of the reference.
-
-`char_range` rules per spec:
-- **Forbidden** when the cited submission's length is at or under the threshold (500 chars). The whole entry is the citation.
-- **Allowed but optional** when the submission length is over the threshold. Use it for precision; omit to cite the whole entry.
-- When provided, it's `[start, end]` inclusive character indices and must be at least 1 character long.
-
-## How agents are notified
-
-Every `UserPromptSubmit` hook fires `cli_entrypoint user-prompt-submit-hook` (configured in `~/.claude/settings.json`). The hook:
-
-1. Reads the session id from the hook stdin JSON.
-2. Looks up the project via `project_identifier_resolver` (a standalone script, no package imports).
-3. If the session is not registered to any source-of-truth project, the hook does nothing.
-4. Otherwise it appends the submission to the project's raw input log and emits `additionalContext` containing both an acknowledgement of the log entry and the small top-level requirements summary.
-
-## How the human is notified
-
-Source-of-truth API calls append messages tagged with `target_project_id` to a global queue. After every Bash tool call, Claude Code fires a PostToolUse hook (also configured globally) that runs `post_tool_use_show_messages_to_raw_input_sender.py`. That hook:
-
-1. Reads the session id from the hook stdin JSON.
-2. Resolves the project; if unregistered, emits `{}` and exits.
-3. Drains only messages targeted at that project; leaves others in place.
-4. Emits a `systemMessage` containing the drained text, which Claude Code shows the user but does NOT inject into the agent's context.
-
-## Reviewer subprocess
-
-In `live` and `deferred` modes, the reviewer runs as a separate `claude -p` subprocess. Persistence is achieved via `--session-id <uuid>` on first call and `--resume <uuid>` afterwards, so server-side context is preserved without keeping a long-running child process.
-
-Output uses `--output-format stream-json --include-partial-messages --verbose`, and every NDJSON event is appended to `reviewer_thinking.log` immediately. If the call later times out, the log still contains the full record up to the kill.
-
-Tool sandbox: `--allowed-tools Read,WebFetch,WebSearch` and `--add-dir <project-dir>`. The reviewer does not use `--bare`.
+By convention `project_id == initializing session_id` (what `init-and-register` does in one step). Any unique string works otherwise.
 
 ## Hook installation
 
-The hooks are global (they fire on every Claude Code session) but self-gate on project membership — they silently no-op for any session whose `session_id` is not in a project's `member_sessions` list. Safe to leave installed.
+Two global hooks. Both fire on every Claude Code session but **self-gate on project membership** — they silently no-op for any session whose `session_id` is not in a project's `member_sessions` list. Safe to leave installed.
 
-Because the hooks must be findable from any cwd in any session, install thin wrapper scripts that do their own `sys.path` setup and swallow all errors (so unrelated sessions never see import errors).
+Install thin wrapper scripts that do their own `sys.path` setup and emit `{}` on any error (so unrelated sessions never see import errors):
 
-1. Copy these wrappers somewhere absolute, e.g. `~/.claude/hooks/`:
-   - `source_of_truth_user_prompt_submit_hook.py`
-   - `source_of_truth_post_tool_use_hook.py`
+`~/.claude/hooks/source_of_truth_user_prompt_submit_hook.py`:
+```python
+#!/usr/bin/env python3
+import sys
+def _emit_empty_and_exit_silently(): print("{}"); sys.exit(0)
+def _main():
+    try:
+        sys.path.insert(0, "/abs/path/to/source-of-truth")
+        from source_of_truth.cli_entrypoint import _handle_user_prompt_submit_hook
+    except Exception: _emit_empty_and_exit_silently(); return
+    try: sys.exit(_handle_user_prompt_submit_hook())
+    except Exception: _emit_empty_and_exit_silently()
+if __name__ == "__main__": _main()
+```
 
-   Each is a small file that inserts the package directory into `sys.path` and calls into either `source_of_truth.cli_entrypoint._handle_user_prompt_submit_hook` or `source_of_truth.post_tool_use_show_messages_to_raw_input_sender._main`. On any exception (missing package, malformed stdin, etc.) they emit `{}` and exit 0.
+`~/.claude/hooks/source_of_truth_post_tool_use_hook.py`: same shape, importing `source_of_truth.post_tool_use_show_messages_to_raw_input_sender._main`.
 
-2. Register them in `~/.claude/settings.json`:
+Then in `~/.claude/settings.json`:
 
 ```json
 {
@@ -119,52 +140,60 @@ Because the hooks must be findable from any cwd in any session, install thin wra
     "UserPromptSubmit": [
       {"matcher": "*", "hooks": [{
         "type": "command",
-        "command": "python3 /home/aikenyon/.claude/hooks/source_of_truth_user_prompt_submit_hook.py"
+        "command": "python3 /home/<you>/.claude/hooks/source_of_truth_user_prompt_submit_hook.py"
       }]}
     ],
     "PostToolUse": [
       {"matcher": "Bash", "hooks": [{
         "type": "command",
-        "command": "python3 /home/aikenyon/.claude/hooks/source_of_truth_post_tool_use_hook.py"
+        "command": "python3 /home/<you>/.claude/hooks/source_of_truth_post_tool_use_hook.py"
       }]}
     ]
   }
 }
 ```
 
-## CLI
+## Storage layout
 
-A small shell wrapper at `~/.local/bin/sot` (or wherever your local bin is) just calls the dispatcher with the package on `sys.path`:
-
-```bash
-#!/usr/bin/env bash
-exec python3 -c "import sys; sys.path.insert(0, '/path/to/source-of-truth'); from source_of_truth.cli_entrypoint import _main; sys.exit(_main())" "$@"
+```
+~/.source-of-truth/
+    global-settings.json                              # optional defaults
+    pending_messages_for_raw_input_sender.jsonl       # outbound queue (per-message tagged with target_project_id)
+    projects/
+        <project_id>/                                 # project_id = session_id of initializing session
+            project-<project_id>-source-of-truth.json # the requirements tree (sole writer = our app)
+            project-settings.json                     # member sessions; mode override; model override; reviewer history
+            raw_input_log.json                        # rolling log, grouped by session_id, raw_input_id sequential from 0
+            reviewer_thinking.log                     # full streamed log of reviewer NDJSON events
+            deferred_change_sets_queue.jsonl          # only used in deferred mode
 ```
 
-Then:
+## Change-set schema
 
-```bash
-sot init-and-register <session_id> <conversation_path>     # one-shot: init project + add this session
-sot init-project       <project_id>                        # init only (project_id can be anything)
-sot add-session        <project_id> <session_id> <conversation_path>
-sot add-path           <project_id> <filesystem_path>
-sot set-mode           <project_id> live|none|deferred
-sot show-top-level     <project_id>
+```json
+{
+  "submitter_rationale": "free-text",
+  "operations": [
+    {"op": "add",              "parent_id": 12, "raw_input_reference": {"raw_input_id": 23, "char_range": [120, 180]}},
+    {"op": "add_top_level",                       "raw_input_reference": {"raw_input_id": 7}},
+    {"op": "reparent",         "node_id": 23, "new_parent_id": 33},
+    {"op": "remove",           "node_id": 47},
+    {"op": "modify_reference", "node_id": 23, "raw_input_reference": {"raw_input_id": 11}},
+    {"op": "reorder_children", "parent_id": 12, "child_order": [4, 23, 9]}
+  ]
+}
 ```
 
-By convention `project_id` is the session_id of the session that initialized the project, which is what `init-and-register` does in one step.
+`raw_input_id` is a per-project integer assigned at log time, starting at 0. Session and timestamp are stored on the entry as data but the reference is just the integer.
 
-## Tests
-
-```bash
-python3 -m pytest tests/ -q
-```
-
-44 unit tests covering: file lock concurrency, change-set application for every operation type, reference validation (out-of-bounds, missing range when over the threshold, missing entry), the standalone project resolver, raw log writer truncation and grouping, project-path validation, queued user-message routing per project, model resolution priority (project override → global → default), the three reviewer modes including deferred flush behavior, and the streaming reviewer subprocess (mocked Popen).
+`char_range` rules per spec:
+- **Forbidden** when the cited submission's length is at or under the threshold (500 chars). The whole entry is the citation.
+- **Allowed but optional** when the submission length is over the threshold.
+- When provided it's `[start, end]` inclusive character indices and must be at least 1 character long.
 
 ## Status
 
-Capture, validation, application, queuing, and all three reviewer modes are implemented and unit-tested. The live reviewer subprocess is implemented but the round-trip latency on Opus is impractical; defaulting the reviewer model to Haiku is a workaround. Live end-to-end smoke testing of the reviewer round-trip is the open work item.
+57 unit tests passing. Live haiku reviewer round-trip verified end-to-end with single-op, two-op, and four-call sequential tests. Hooks installed and self-gating verified across registered/unregistered/missing-package/malformed-input cases. Tree on disk for the bootstrap project (`be2988e2-...`) holds 14 captured requirement nodes from the build of this tool itself.
 
 ## License
 
