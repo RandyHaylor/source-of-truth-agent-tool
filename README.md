@@ -13,7 +13,7 @@ This tool fixes that.
 1. **Every raw input you send is captured verbatim** to a per-project log file at write-time, untouched.
 2. The agent is allowed to maintain a **requirements tree**, but every node in that tree is **only a reference to a verbatim quote** in the log — never agent prose. Nothing the agent can write goes into the tree directly.
 3. Every proposed edit to the tree (add, move, remove, modify reference, reorder) is sent to a **separate AI reviewer subprocess** (Haiku by default — fast and cheap) which returns a per-operation approve/reject verdict with reasons.
-4. Only approved operations land on disk. Rejected ones come back to the agent with the reviewer's reasoning.
+4. Only approved operations land on disk. Rejected ones come back to the agent with the reviewer's reasoning. Approved ops are also applied **one at a time** so a single bad op (e.g., a `reparent` referencing a node a sibling op removed) doesn't sink the others — its failure is reported back to the agent per-op.
 5. The agent receives a small top-level summary of the tree on every turn, plus brief usage instructions.
 
 The result: the only path for a hallucinated requirement to enter the tree is the agent **deliberately mis-citing a real quote**, which the reviewer catches by comparing the cited slice against the surrounding context. Pure invention is structurally impossible.
@@ -193,4 +193,4 @@ Then in `~/.claude/settings.json`:
 
 ## Status
 
-57 unit tests passing. Live haiku reviewer round-trip verified end-to-end with single-op, two-op, and four-call sequential tests. Hooks installed and self-gating verified across registered/unregistered/missing-package/malformed-input cases. Tree on disk for the bootstrap project (`be2988e2-...`) holds 14 captured requirement nodes from the build of this tool itself.
+68 unit tests passing. Live haiku reviewer round-trip verified end-to-end with single-op, two-op, and four-call sequential tests. Hooks installed and self-gating verified across registered/unregistered/missing-package/malformed-input cases. Tree on disk for the bootstrap project (`be2988e2-...`) holds 14 captured requirement nodes from the build of this tool itself.
