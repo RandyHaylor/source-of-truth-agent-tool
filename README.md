@@ -113,45 +113,27 @@ By convention `project_id == initializing session_id` (what `init-and-register` 
 
 Two global hooks. Both fire on every Claude Code session but **self-gate on project membership** — they silently no-op for any session whose `session_id` is not in a project's `member_sessions` list. Safe to leave installed.
 
-Install thin wrapper scripts that do their own `sys.path` setup and emit `{}` on any error (so unrelated sessions never see import errors):
+Install with the bundled script:
 
-`~/.claude/hooks/source_of_truth_user_prompt_submit_hook.py`:
-```python
-#!/usr/bin/env python3
-import sys
-def _emit_empty_and_exit_silently(): print("{}"); sys.exit(0)
-def _main():
-    try:
-        sys.path.insert(0, "/abs/path/to/source-of-truth")
-        from source_of_truth.cli_entrypoint import _handle_user_prompt_submit_hook
-    except Exception: _emit_empty_and_exit_silently(); return
-    try: sys.exit(_handle_user_prompt_submit_hook())
-    except Exception: _emit_empty_and_exit_silently()
-if __name__ == "__main__": _main()
+```bash
+python3 install.py        # Linux/macOS
+python install.py         # Windows
 ```
 
-`~/.claude/hooks/source_of_truth_post_tool_use_hook.py`: same shape, importing `source_of_truth.post_tool_use_show_messages_to_raw_input_sender._main`.
+The installer:
+- Copies the `source_of_truth/` Python package into `~/.claude/hooks/source-of-truth-agent-tool/` so the cloned repo can be deleted afterwards.
+- Writes the two wrapper scripts (`user_prompt_submit_hook.py` and `post_tool_use_hook.py`) in that same dir. Each adds the install dir to `sys.path` and emits `{}` on any error so unrelated sessions never see import problems.
+- Patches `~/.claude/settings.json` to register both hooks (UserPromptSubmit and PostToolUse with `Bash` matcher) if not already present. Existing hook entries (yours or other plugins') are left untouched.
+- Backs up `settings.json` with a timestamp before any change.
+- Idempotent — safe to re-run after pulling a newer repo.
 
-Then in `~/.claude/settings.json`:
+To remove cleanly:
 
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {"matcher": "*", "hooks": [{
-        "type": "command",
-        "command": "python3 /home/<you>/.claude/hooks/source_of_truth_user_prompt_submit_hook.py"
-      }]}
-    ],
-    "PostToolUse": [
-      {"matcher": "Bash", "hooks": [{
-        "type": "command",
-        "command": "python3 /home/<you>/.claude/hooks/source_of_truth_post_tool_use_hook.py"
-      }]}
-    ]
-  }
-}
+```bash
+python3 uninstall.py
 ```
+
+Removes the install dir (wrappers + copied package) and scrubs the matching hook entries from `settings.json`. Your captured raw input logs and requirements trees under `~/.source-of-truth/` are NOT touched.
 
 ## Storage layout
 
