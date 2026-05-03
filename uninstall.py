@@ -3,15 +3,15 @@
 Cross-platform uninstaller for source-of-truth-agent-tool.
 
 Reverses what install.py did:
-  1. Removes ~/.claude/hooks/source-of-truth-agent-tool/ entirely
-     (this contains both the wrapper scripts AND the copied
-     source_of_truth/ application package).
+  1. Removes ~/.claude/skills/source-of-truth-agent-tool/ entirely (skill
+     manifest, wrapper scripts, copied package).
   2. Removes any UserPromptSubmit or PostToolUse hook entry from
      ~/.claude/settings.json whose command references that install dir.
   3. Backs up settings.json before changing it.
 
 Does NOT delete ~/.source-of-truth/ (raw input logs, requirements trees,
-project settings). Remove that directory manually if you want to wipe state.
+project settings, global-settings.json). Remove that directory manually
+if you want to wipe state.
 """
 import datetime
 import json
@@ -19,7 +19,7 @@ import os
 import shutil
 
 
-HOOK_INSTALL_DIR_NAME = "source-of-truth-agent-tool"
+SKILL_INSTALL_DIR_NAME = "source-of-truth-agent-tool"
 
 
 def home_claude_dir():
@@ -27,7 +27,7 @@ def home_claude_dir():
 
 
 def install_dir_path():
-    return os.path.join(home_claude_dir(), "hooks", HOOK_INSTALL_DIR_NAME)
+    return os.path.join(home_claude_dir(), "skills", SKILL_INSTALL_DIR_NAME)
 
 
 def settings_json_path():
@@ -71,7 +71,7 @@ def remove_our_hook_entries(settings_data, hook_event_name):
         inner_hooks = matcher_entry.get("hooks", [])
         filtered_inner_hooks = []
         for hook_item in inner_hooks:
-            if HOOK_INSTALL_DIR_NAME in hook_item.get("command", ""):
+            if SKILL_INSTALL_DIR_NAME in hook_item.get("command", ""):
                 removed_count += 1
                 continue
             filtered_inner_hooks.append(hook_item)

@@ -34,30 +34,34 @@ The result: the only path for a hallucinated requirement to enter the tree is th
 Requires Python 3.10+ and (for the reviewer) the `claude` CLI logged in.
 
 ```bash
-# 1. Clone
+# 1. Clone the repo (anywhere -- install.py will deploy it to your skill folder).
 git clone git@github.com:RandyHaylor/source-of-truth-agent-tool.git
 cd source-of-truth-agent-tool
 
-# 2. (Optional but recommended) Drop a small wrapper on PATH
+# 2. Install. This copies the repo into ~/.claude/skills/source-of-truth-agent-tool/,
+#    writes the two hook wrapper scripts, patches ~/.claude/settings.json, and
+#    initializes ~/.source-of-truth/global-settings.json.
+python3 install.py
+
+# 3. (Optional) Drop a small wrapper on PATH so you can run `sot <verb>` anywhere.
 cat > ~/.local/bin/sot <<EOF
 #!/usr/bin/env bash
-exec python3 -c "import sys; sys.path.insert(0, '$(pwd)'); from source_of_truth.cli_entrypoint import _main; sys.exit(_main())" "\$@"
+exec python3 -c "import sys; sys.path.insert(0, '$HOME/.claude/skills/source-of-truth-agent-tool'); from source_of_truth.cli_entrypoint import _main; sys.exit(_main())" "\$@"
 EOF
 chmod +x ~/.local/bin/sot
 
-# 3. Run the unit tests
-python3 -m pytest tests/ -q
-
-# 4. Initialize a project for your CURRENT Claude Code session.
-#    Find the session id from ~/.claude/projects/<encoded-cwd>/<session_id>.jsonl
-#    or from your Claude Code UI.
+# 4. Open a new Claude Code session in your project, then in that session
+#    register it as a source-of-truth project. Find the session id from
+#    ~/.claude/projects/<encoded-cwd>/<session_id>.jsonl or from the UI.
 sot init-and-register <your_session_id> ~/.claude/projects/<encoded-cwd>/<your_session_id>.jsonl
 
 # 5. Pick a reviewer mode. Default is "live" (every submit gets reviewed).
 sot set-mode <your_session_id> live    # or: none, deferred
 ```
 
-After that, install the two global hooks (see "Hook installation" below). With the hooks installed, every user prompt in any registered session is auto-logged, and any reviewer outcome messages auto-surface to you via Claude Code's `systemMessage`.
+If you'd rather skip the wrapper script, you can also clone directly into `~/.claude/skills/source-of-truth-agent-tool/` and run `python3 install.py` from there — install.py detects the case and skips the copy step.
+
+With install.py done, every user prompt in any registered session is auto-logged and any reviewer outcome messages auto-surface to you via Claude Code's `systemMessage`.
 
 To use the API from inside an agent's tool calls:
 
@@ -111,20 +115,13 @@ By convention `project_id == initializing session_id` (what `init-and-register` 
 
 ## Hook installation
 
-Two global hooks. Both fire on every Claude Code session but **self-gate on project membership** — they silently no-op for any session whose `session_id` is not in a project's `member_sessions` list. Safe to leave installed.
+Both global hooks are installed by `python3 install.py` (see Quickstart). They fire on every Claude Code session but **self-gate on project membership** — they silently no-op for any session whose `session_id` is not in a project's `member_sessions` list, so leaving them installed is safe even when you're not using the tool.
 
-Install with the bundled script:
-
-```bash
-python3 install.py        # Linux/macOS
-python install.py         # Windows
-```
-
-The installer:
-- Copies the `source_of_truth/` Python package into `~/.claude/hooks/source-of-truth-agent-tool/` so the cloned repo can be deleted afterwards.
-- Writes the two wrapper scripts (`user_prompt_submit_hook.py` and `post_tool_use_hook.py`) in that same dir. Each adds the install dir to `sys.path` and emits `{}` on any error so unrelated sessions never see import problems.
-- Patches `~/.claude/settings.json` to register both hooks (UserPromptSubmit and PostToolUse with `Bash` matcher) if not already present. Existing hook entries (yours or other plugins') are left untouched.
-- Backs up `settings.json` with a timestamp before any change.
+`install.py`:
+- Deploys the repo into `~/.claude/skills/source-of-truth-agent-tool/` (skipping the copy if you cloned directly into that folder).
+- Writes the two wrapper scripts in that dir. Each adds the install dir to `sys.path`, calls into the `source_of_truth` package next to it, and emits `{}` on any error.
+- Patches `~/.claude/settings.json` to register both hooks if not already present. Other hook entries are left untouched. `settings.json` is backed up with a timestamp.
+- Initializes `~/.source-of-truth/global-settings.json` with defaults (`reviewer_mode: live`, `reviewer_model_name: claude-haiku-4-5-20251001`).
 - Idempotent — safe to re-run after pulling a newer repo.
 
 To remove cleanly:
@@ -133,7 +130,7 @@ To remove cleanly:
 python3 uninstall.py
 ```
 
-Removes the install dir (wrappers + copied package) and scrubs the matching hook entries from `settings.json`. Your captured raw input logs and requirements trees under `~/.source-of-truth/` are NOT touched.
+Removes `~/.claude/skills/source-of-truth-agent-tool/` and scrubs the matching hook entries from `settings.json`. Your captured raw input logs, requirements trees, and global settings under `~/.source-of-truth/` are NOT touched.
 
 ## Storage layout
 

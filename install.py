@@ -3,19 +3,22 @@
 Cross-platform installer for source-of-truth-agent-tool.
 
 What it does (idempotent):
-  1. Creates ~/.claude/hooks/source-of-truth-agent-tool/ (the install dir).
-  2. Copies the source_of_truth/ Python package from this repo into the
-     install dir. After this, the cloned repo can be deleted -- the
-     installed copy stands alone.
+  1. Resolves the install dir at ~/.claude/skills/source-of-truth-agent-tool/.
+     (Putting it under skills/ means Claude Code auto-discovers SKILL.md.)
+  2. Copies the entire repo's contents (source_of_truth/ package, SKILL.md,
+     project-start-wizard.md, README.md, etc.) into the install dir.
+     EDGE CASE: if the user already cloned directly into the install dir
+     and is running install.py from there, the copy step is silently
+     skipped -- nothing to copy.
   3. Writes two wrapper scripts in the install dir:
        - user_prompt_submit_hook.py
        - post_tool_use_hook.py
-     Each adds the install dir to sys.path and calls into the copied
-     package. On any error they silently emit {} so unrelated sessions
-     never see import errors.
+     Each adds the install dir to sys.path and calls into the source_of_truth
+     package next to it. On any error they silently emit {} so unrelated
+     sessions never see import errors.
   4. Patches ~/.claude/settings.json to register both hooks if not already
-     present. Existing hook entries (yours or other plugins') are left alone.
-  5. Backs up settings.json with a timestamp before any change.
+     present. Existing hook entries are left untouched. Backed up first.
+  5. Initializes ~/.source-of-truth/ with default global-settings.json.
 
 Run:
   python3 install.py           # Linux/macOS
@@ -28,7 +31,7 @@ import platform
 import shutil
 
 
-HOOK_INSTALL_DIR_NAME = "source-of-truth-agent-tool"
+SKILL_INSTALL_DIR_NAME = "source-of-truth-agent-tool"
 USER_PROMPT_SUBMIT_HOOK_FILENAME = "user_prompt_submit_hook.py"
 POST_TOOL_USE_HOOK_FILENAME = "post_tool_use_hook.py"
 
@@ -81,8 +84,12 @@ def home_claude_dir():
     return os.path.expanduser("~/.claude")
 
 
+def home_skills_dir():
+    return os.path.join(home_claude_dir(), "skills")
+
+
 def install_dir_path():
-    return os.path.join(home_claude_dir(), "hooks", HOOK_INSTALL_DIR_NAME)
+    return os.path.join(home_skills_dir(), SKILL_INSTALL_DIR_NAME)
 
 
 def settings_json_path():
@@ -93,50 +100,28 @@ def python_launcher_for_current_platform():
     return "python" if platform.system() == "Windows" else "python3"
 
 
-def copy_app_package_into_install_dir(repo_dir, install_dir):
-    """Copy the source_of_truth/ subdir from the repo into the install dir.
+def is_running_from_install_dir(repo_dir, install_dir):
+    return os.path.realpath(repo_dir) == os.path.realpath(install_dir)
 
-    Uses copytree(dirs_exist_ok=True) so re-running the installer overwrites
-    in place without leaving stale files (well, it leaves files that exist
-    in the install dir but not in the source -- we explicitly clean those
-    too via a pre-pass below).
+
+def copy_repo_contents_into_install_dir(repo_dir, install_dir):
+    """Copy every top-level item in the repo into the install dir.
+
+    Skips .git/, __pycache__/, *.pyc, and any *.bak* settings backups that
+    might happen to be under the repo (defensive). Existing files in the
+    install dir are overwritten; stale files (in install dir but not in repo)
+    are removed first to avoid leftover modules from older installs.
     """
-    source_package_dir = os.path.join(repo_dir, "source_of_truth")
-    if not os.path.isdir(source_package_dir):
-        raise FileNotFoundError(
-            f"Expected source_of_truth/ at {source_package_dir}; run install.py "
-            "from the repo root."
-        )
-    destination_package_dir = os.path.join(install_dir, "source_of_truth")
-    if os.path.isdir(destination_package_dir):
-        # Wipe stale files from a prior install before re-copying so renamed
-        # or removed modules don't linger.
-        shutil.rmtree(destination_package_dir)
-    shutil.copytree(
-        source_package_dir, destination_package_dir,
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    ignore_patterns_callable = shutil.ignore_patterns(
+        ".git", "__pycache__", "*.pyc", "*.bak.*",
     )
-    print(f"  copied package -> {destination_package_dir}")
-    return destination_package_dir
-
-
-def write_wrapper_scripts(install_dir):
-    """Wrappers add the install_dir itself to sys.path so they import the
-    copied source_of_truth/ package living next to them.
-    """
-    os.makedirs(install_dir, exist_ok=True)
-    user_hook_path = os.path.join(install_dir, USER_PROMPT_SUBMIT_HOOK_FILENAME)
-    post_hook_path = os.path.join(install_dir, POST_TOOL_USE_HOOK_FILENAME)
-    with open(user_hook_path, "w") as f:
-        f.write(USER_PROMPT_SUBMIT_HOOK_TEMPLATE.format(package_dir=install_dir))
-    with open(post_hook_path, "w") as f:
-        f.write(POST_TOOL_USE_HOOK_TEMPLATE.format(package_dir=install_dir))
-    if platform.system() != "Windows":
-        os.chmod(user_hook_path, 0o755)
-        os.chmod(post_hook_path, 0o755)
-    print(f"  wrote: {user_hook_path}")
-    print(f"  wrote: {post_hook_path}")
-    return user_hook_path, post_hook_path
+    # Wipe the install dir before copy so renamed/removed files don't linger,
+    # but only if it's a real directory we created -- never wipe an arbitrary
+    # destination. Caller already resolved install_dir to ~/.claude/skills/<name>/.
+    if os.path.isdir(install_dir):
+        shutil.rmtree(install_dir)
+    shutil.copytree(repo_dir, install_dir, ignore=ignore_patterns_callable)
+    print(f"  copied repo -> {install_dir}")
 
 
 def load_or_init_settings_json(path):
@@ -151,7 +136,8 @@ def hook_event_already_has_entry_for_install_dir(settings_data, hook_event_name)
     entries = settings_data.get("hooks", {}).get(hook_event_name, [])
     for matcher_entry in entries:
         for hook_item in matcher_entry.get("hooks", []):
-            if HOOK_INSTALL_DIR_NAME in hook_item.get("command", ""):
+            command_text = hook_item.get("command", "")
+            if "skills" in command_text and SKILL_INSTALL_DIR_NAME in command_text:
                 return True
     return False
 
@@ -181,6 +167,42 @@ def write_settings_json(path, data):
         f.write("\n")
 
 
+def write_wrapper_scripts(install_dir):
+    os.makedirs(install_dir, exist_ok=True)
+    user_hook_path = os.path.join(install_dir, USER_PROMPT_SUBMIT_HOOK_FILENAME)
+    post_hook_path = os.path.join(install_dir, POST_TOOL_USE_HOOK_FILENAME)
+    with open(user_hook_path, "w") as f:
+        f.write(USER_PROMPT_SUBMIT_HOOK_TEMPLATE.format(package_dir=install_dir))
+    with open(post_hook_path, "w") as f:
+        f.write(POST_TOOL_USE_HOOK_TEMPLATE.format(package_dir=install_dir))
+    if platform.system() != "Windows":
+        os.chmod(user_hook_path, 0o755)
+        os.chmod(post_hook_path, 0o755)
+    print(f"  wrote: {user_hook_path}")
+    print(f"  wrote: {post_hook_path}")
+    return user_hook_path, post_hook_path
+
+
+def initialize_global_settings_file():
+    """Create ~/.source-of-truth/global-settings.json with defaults if absent."""
+    sot_root = os.path.expanduser("~/.source-of-truth")
+    global_settings_path = os.path.join(sot_root, "global-settings.json")
+    os.makedirs(sot_root, exist_ok=True)
+    os.makedirs(os.path.join(sot_root, "projects"), exist_ok=True)
+    if os.path.isfile(global_settings_path):
+        print(f"  global settings already present at {global_settings_path}")
+        return
+    default_payload = {
+        "reviewer_command": ["claude", "-p"],
+        "reviewer_mode": "live",
+        "reviewer_model_name": "claude-haiku-4-5-20251001",
+    }
+    with open(global_settings_path, "w") as f:
+        json.dump(default_payload, f, indent=2, sort_keys=True)
+        f.write("\n")
+    print(f"  wrote default global settings -> {global_settings_path}")
+
+
 def main():
     repo_dir = os.path.dirname(os.path.abspath(__file__))
     install_dir = install_dir_path()
@@ -191,12 +213,15 @@ def main():
     print(f"Install dir: {install_dir}")
     print(f"Settings:    {settings_path}\n")
 
-    print("Step 1: copy source_of_truth/ package into install dir")
-    os.makedirs(install_dir, exist_ok=True)
-    copy_app_package_into_install_dir(repo_dir, install_dir)
+    print("Step 1: deploy repo contents to install dir")
+    if is_running_from_install_dir(repo_dir, install_dir):
+        print(f"  running from install dir -- copy step skipped")
+    else:
+        os.makedirs(home_skills_dir(), exist_ok=True)
+        copy_repo_contents_into_install_dir(repo_dir, install_dir)
     print()
 
-    print("Step 2: write hook wrapper scripts")
+    print("Step 2: write hook wrapper scripts in install dir")
     user_hook_path, post_hook_path = write_wrapper_scripts(install_dir)
     print()
 
@@ -207,14 +232,14 @@ def main():
 
     settings_was_modified = False
     if hook_event_already_has_entry_for_install_dir(settings_data, "UserPromptSubmit"):
-        print("  UserPromptSubmit entry already present — no change")
+        print("  UserPromptSubmit entry already present -- no change")
     else:
         append_hook_entry(settings_data, "UserPromptSubmit", "*", user_command)
         print(f"  appended UserPromptSubmit: {user_command}")
         settings_was_modified = True
 
     if hook_event_already_has_entry_for_install_dir(settings_data, "PostToolUse"):
-        print("  PostToolUse entry already present — no change")
+        print("  PostToolUse entry already present -- no change")
     else:
         append_hook_entry(settings_data, "PostToolUse", "Bash", post_command)
         print(f"  appended PostToolUse(matcher=Bash): {post_command}")
@@ -227,6 +252,10 @@ def main():
         write_settings_json(settings_path, settings_data)
     else:
         print("  no settings.json changes needed")
+    print()
+
+    print("Step 4: initialize ~/.source-of-truth/ global settings")
+    initialize_global_settings_file()
 
     print("\nInstall complete.")
 
