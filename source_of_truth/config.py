@@ -174,7 +174,22 @@ def load_project_settings(project_id: str) -> ProjectSettings:
 
 
 def save_project_settings(settings: ProjectSettings) -> None:
+    """Write project-settings.json atomically under a cross-platform file lock.
+
+    Two safeguards:
+      1. Cross-platform file lock around the write so concurrent writers
+         (multiple registered sessions adding themselves at once, etc.)
+         do not interleave their payload bytes.
+      2. Temp-file-and-rename so any concurrent reader always sees either
+         the previous complete file or the new complete file -- never a
+         partially-written one.
+    """
+    import os
+    import tempfile
+    from .cross_platform_file_lock import acquire_exclusive_file_lock
+
     project_directory_for(settings.project_id).mkdir(parents=True, exist_ok=True)
+    settings_file = project_settings_file_path(settings.project_id)
     payload: dict[str, Any] = {
         "member_sessions": settings.member_sessions,
         "historical_reviewer_session_ids": settings.historical_reviewer_session_ids,
@@ -186,6 +201,18 @@ def save_project_settings(settings: ProjectSettings) -> None:
         payload["reviewer_model_name_override"] = settings.reviewer_model_name_override
     if settings.reviewer_mode_override is not None:
         payload["reviewer_mode_override"] = settings.reviewer_mode_override
-    project_settings_file_path(settings.project_id).write_text(
-        json.dumps(payload, indent=2, sort_keys=True)
-    )
+    payload_text = json.dumps(payload, indent=2, sort_keys=True)
+    with acquire_exclusive_file_lock(settings_file):
+        temp_fd, temp_path_str = tempfile.mkstemp(
+            prefix=".sot-settings-", suffix=".tmp", dir=str(settings_file.parent)
+        )
+        try:
+            with os.fdopen(temp_fd, "w") as temp_file_handle:
+                temp_file_handle.write(payload_text)
+            os.replace(temp_path_str, settings_file)
+        except Exception:
+            try:
+                os.unlink(temp_path_str)
+            except OSError:
+                pass
+            raise

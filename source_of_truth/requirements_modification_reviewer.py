@@ -15,7 +15,6 @@ Read tools to verdict. This keeps the round-trip to a single Claude turn.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -50,28 +49,64 @@ class ReviewerVerdict:
                 for v in self.per_operation_verdicts if not v.approved]
 
 
-# Greedy match for the outermost JSON-object candidate that contains "ops".
-_VERDICT_JSON_OBJECT_REGEX = re.compile(r"\{.*\"ops\".*\}", re.DOTALL)
+def _iter_balanced_brace_object_substrings_from_end(response_text: str):
+    """Yield JSON-object substrings from the response, scanned right-to-left.
+
+    For each '}' in the response (last to first), walk left tracking nesting
+    depth and yield the substring from the matching '{' through this '}'.
+    Skips braces inside JSON strings (handles escaped quotes).
+    """
+    closing_brace_positions = [i for i, ch in enumerate(response_text) if ch == "}"]
+    for closing_index in reversed(closing_brace_positions):
+        depth = 0
+        inside_string_literal = False
+        previous_char = ""
+        for scan_index in range(closing_index, -1, -1):
+            char_at_scan = response_text[scan_index]
+            # Detect entering/leaving a JSON string literal (handle escaped quotes).
+            if char_at_scan == '"':
+                # Count preceding backslashes to decide if this quote is escaped.
+                backslash_run_length = 0
+                back = scan_index - 1
+                while back >= 0 and response_text[back] == "\\":
+                    backslash_run_length += 1
+                    back -= 1
+                if backslash_run_length % 2 == 0:
+                    inside_string_literal = not inside_string_literal
+            if inside_string_literal:
+                continue
+            if char_at_scan == "}":
+                depth += 1
+            elif char_at_scan == "{":
+                depth -= 1
+                if depth == 0:
+                    yield response_text[scan_index : closing_index + 1]
+                    break
 
 
 def _extract_verdict_json_from_response(response_text: str) -> dict[str, Any]:
-    match = _VERDICT_JSON_OBJECT_REGEX.search(response_text)
-    if not match:
-        raise ValueError(f"No verdict JSON found in reviewer response: {response_text[:300]}")
-    candidate_text = match.group(0)
-    # Try progressively shorter prefixes ending in '}' so we find a parseable
-    # object even if the regex over-matched into trailing prose.
-    for trim_count in range(len(candidate_text), 0, -1):
-        substring = candidate_text[:trim_count]
-        if not substring.endswith("}"):
-            continue
+    """Find the rightmost valid JSON object in the response that contains 'ops'.
+
+    Robust to: surrounding prose, markdown code fences, example JSON snippets
+    embedded earlier in the reply, escaped quotes in string fields.
+    """
+    for candidate_substring in _iter_balanced_brace_object_substrings_from_end(response_text):
         try:
-            parsed = json.loads(substring)
-            if isinstance(parsed, dict):
-                return parsed
+            parsed = json.loads(candidate_substring)
         except json.JSONDecodeError:
             continue
-    raise ValueError(f"No valid verdict JSON parseable from response: {response_text[:300]}")
+        if isinstance(parsed, dict) and "ops" in parsed:
+            return parsed
+    # Fallback: rightmost valid JSON object even without "ops" key, so callers
+    # can surface a useful error rather than a generic regex miss.
+    for candidate_substring in _iter_balanced_brace_object_substrings_from_end(response_text):
+        try:
+            parsed = json.loads(candidate_substring)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError(f"No valid JSON object found in reviewer response: {response_text[:300]}")
 
 
 def _build_inline_resolved_context_for_change_set(

@@ -42,6 +42,7 @@ from .requirements_reference_validator import (
 from .requirements_tree_change_set_applier import (
     ChangeSetApplicationError,
     apply_change_set_to_tree,
+    apply_change_set_to_tree_with_per_op_isolation,
 )
 from .requirements_tree_change_set_schema import RequirementsTreeChangeSet
 from .requirements_tree_node_schema import (
@@ -200,26 +201,25 @@ class RequirementsTreeControlledApi:
             change_set.operations[i] for i in sorted(approved_indices)
         ]
 
-        # Apply only the approved subset; rejections are reported back to the agent.
+        # Apply approved ops one at a time so a single bad op doesn't sink
+        # the others. Returns per-op outcomes so we can tell the agent which
+        # one failed and why.
+        apply_failure_summary_text = ""
+        applied_operation_count_after_isolation = 0
         if approved_operations_in_original_order:
-            try:
-                current_tree = load_requirements_tree(self._project_id)
-                new_tree = apply_change_set_to_tree(
-                    current_tree, approved_operations_in_original_order
-                )
-                save_requirements_tree_atomically(new_tree)
-            except ChangeSetApplicationError as exc:
-                error_message = (
-                    f"Reviewer approved {len(approved_operations_in_original_order)} op(s) "
-                    f"but apply failed: {exc}. Tree unchanged. Thoughts: {thinking_log_path}"
-                )
-                add_pending_message_for_raw_input_sender(error_message, target_project_id=self._project_id)
-                return ChangeSetSubmissionResult(
-                    approved=False,
-                    reviewer_message=str(exc),
-                    applied_operation_count=0,
-                    message_for_raw_input_sender=f"[source-of-truth] {error_message}",
-                    reviewer_thinking_log_path=thinking_log_path,
+            current_tree = load_requirements_tree(self._project_id)
+            new_tree, per_op_outcomes = apply_change_set_to_tree_with_per_op_isolation(
+                current_tree, approved_operations_in_original_order
+            )
+            save_requirements_tree_atomically(new_tree)
+            applied_operation_count_after_isolation = sum(
+                1 for outcome in per_op_outcomes if outcome["applied"]
+            )
+            apply_failures = [outcome for outcome in per_op_outcomes if not outcome["applied"]]
+            if apply_failures:
+                apply_failure_summary_text = " Apply failures: " + "; ".join(
+                    f"op[{outcome['operation_index']}]: {outcome['error']}"
+                    for outcome in apply_failures
                 )
 
         rejection_summary_text = ""
@@ -227,15 +227,21 @@ class RequirementsTreeControlledApi:
             rejection_summary_text = " Rejected ops: " + "; ".join(
                 f"op[{i}]: {reason}" for i, reason in rejected_with_reasons
             )
+        every_op_landed = (
+            applied_operation_count_after_isolation == operation_count
+            and not rejected_with_reasons
+        )
         outcome_message = (
-            f"Reviewer applied {len(approved_operations_in_original_order)}/{operation_count} op(s). "
-            f"Notes: {verdict.message}.{rejection_summary_text} Thoughts log: {thinking_log_path}"
+            f"Reviewer applied {applied_operation_count_after_isolation}/{operation_count} op(s). "
+            f"Notes: {verdict.message}."
+            f"{rejection_summary_text}{apply_failure_summary_text} "
+            f"Thoughts log: {thinking_log_path}"
         )
         add_pending_message_for_raw_input_sender(outcome_message, target_project_id=self._project_id)
         return ChangeSetSubmissionResult(
-            approved=verdict.approved,
-            reviewer_message=verdict.message + rejection_summary_text,
-            applied_operation_count=len(approved_operations_in_original_order),
+            approved=every_op_landed,
+            reviewer_message=verdict.message + rejection_summary_text + apply_failure_summary_text,
+            applied_operation_count=applied_operation_count_after_isolation,
             message_for_raw_input_sender=f"[source-of-truth] {outcome_message}",
             reviewer_thinking_log_path=thinking_log_path,
         )
@@ -300,21 +306,24 @@ class RequirementsTreeControlledApi:
             merged_operations[i] for i in approved_indices_for_flush
         ]
 
+        applied_operation_count_for_flush = 0
+        apply_failure_summary_text_for_flush = ""
         if approved_operations_for_flush:
-            try:
-                current_tree = load_requirements_tree(self._project_id)
-                new_tree = apply_change_set_to_tree(current_tree, approved_operations_for_flush)
-                save_requirements_tree_atomically(new_tree)
-            except ChangeSetApplicationError as exc:
-                return ChangeSetSubmissionResult(
-                    approved=False,
-                    reviewer_message=f"Approved by reviewer but failed to apply: {exc}",
-                    applied_operation_count=0,
-                    message_for_raw_input_sender=(
-                        f"[source-of-truth] Reviewer APPROVED flushed batch but apply failed: {exc}. "
-                        f"Tree unchanged. Reviewer thoughts: {thinking_log_path}"
-                    ),
-                    reviewer_thinking_log_path=thinking_log_path,
+            current_tree = load_requirements_tree(self._project_id)
+            new_tree, per_op_outcomes_for_flush = apply_change_set_to_tree_with_per_op_isolation(
+                current_tree, approved_operations_for_flush
+            )
+            save_requirements_tree_atomically(new_tree)
+            applied_operation_count_for_flush = sum(
+                1 for outcome in per_op_outcomes_for_flush if outcome["applied"]
+            )
+            flush_apply_failures = [
+                outcome for outcome in per_op_outcomes_for_flush if not outcome["applied"]
+            ]
+            if flush_apply_failures:
+                apply_failure_summary_text_for_flush = " Apply failures: " + "; ".join(
+                    f"op[{outcome['operation_index']}]: {outcome['error']}"
+                    for outcome in flush_apply_failures
                 )
 
         rejection_summary_text_for_flush = ""
@@ -322,16 +331,21 @@ class RequirementsTreeControlledApi:
             rejection_summary_text_for_flush = " Rejected ops: " + "; ".join(
                 f"op[{i}]: {reason}" for i, reason in rejected_with_reasons_for_flush
             )
+        every_op_landed_in_flush = (
+            applied_operation_count_for_flush == operation_count
+            and not rejected_with_reasons_for_flush
+        )
         approval_message = (
-            f"Flushed batch: applied {len(approved_operations_for_flush)}/{operation_count} op(s). "
-            f"Notes: {verdict.message}.{rejection_summary_text_for_flush} "
+            f"Flushed batch: applied {applied_operation_count_for_flush}/{operation_count} op(s). "
+            f"Notes: {verdict.message}."
+            f"{rejection_summary_text_for_flush}{apply_failure_summary_text_for_flush} "
             f"Thoughts log: {thinking_log_path}"
         )
         add_pending_message_for_raw_input_sender(approval_message, target_project_id=self._project_id)
         return ChangeSetSubmissionResult(
-            approved=verdict.approved,
-            reviewer_message=verdict.message + rejection_summary_text_for_flush,
-            applied_operation_count=len(approved_operations_for_flush),
+            approved=every_op_landed_in_flush,
+            reviewer_message=verdict.message + rejection_summary_text_for_flush + apply_failure_summary_text_for_flush,
+            applied_operation_count=applied_operation_count_for_flush,
             message_for_raw_input_sender=f"[source-of-truth] {approval_message}",
             reviewer_thinking_log_path=thinking_log_path,
         )

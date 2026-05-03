@@ -303,9 +303,11 @@ class ClaudeCodeAdapter(AiCliAdapterInterface):
         priming_payload = (
             "You are the source-of-truth REVIEWER agent.\n"
             f"Allowed read paths: {allowed_read_paths}\n"
-            "On every change-set prompt, reply with EXACTLY one JSON object on its own line: "
-            '{"approved": <bool>, "message": "<short reason or guidance>"} '
-            "and nothing else outside that object.\n\n"
+            "On every change-set prompt, reply with EXACTLY one JSON object: "
+            '{"ops": [{"index": <int>, "approved": <bool>, "reason": "<=15 words"}, ...], '
+            '"message": "<=20 words overall"}. '
+            "There must be one entry in `ops` per operation in the change-set. "
+            "Nothing before/after the JSON; no markdown fences.\n\n"
             f"Priming context:\n{priming_prompt_text}"
         )
         handle.send_prompt_and_await_response(priming_payload)

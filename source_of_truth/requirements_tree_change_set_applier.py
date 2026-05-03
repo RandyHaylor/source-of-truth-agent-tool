@@ -138,3 +138,30 @@ def apply_change_set_to_tree(
             raise ChangeSetApplicationError(f"Unknown op kind: {op_kind}")
 
     return new_tree
+
+
+def apply_change_set_to_tree_with_per_op_isolation(
+    current_tree: RequirementsTree, change_set_operations: list[dict[str, Any]]
+) -> tuple[RequirementsTree, list[dict[str, Any]]]:
+    """Apply each op individually; skip failures; return (final_tree, per_op_outcomes).
+
+    Each entry in per_op_outcomes is a dict with keys:
+      - "operation_index": position in the input list
+      - "applied":         True if the op was applied, False if skipped
+      - "error":           the ChangeSetApplicationError message (only present if not applied)
+    """
+    running_tree = RequirementsTree.from_json_dict(
+        copy.deepcopy(current_tree.to_json_dict())
+    )
+    per_op_outcomes: list[dict[str, Any]] = []
+    for op_index, single_operation in enumerate(change_set_operations):
+        try:
+            running_tree = apply_change_set_to_tree(running_tree, [single_operation])
+            per_op_outcomes.append({"operation_index": op_index, "applied": True})
+        except ChangeSetApplicationError as exc:
+            per_op_outcomes.append({
+                "operation_index": op_index,
+                "applied": False,
+                "error": str(exc),
+            })
+    return running_tree, per_op_outcomes

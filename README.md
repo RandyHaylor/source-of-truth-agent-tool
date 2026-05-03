@@ -194,7 +194,3 @@ Then in `~/.claude/settings.json`:
 ## Status
 
 57 unit tests passing. Live haiku reviewer round-trip verified end-to-end with single-op, two-op, and four-call sequential tests. Hooks installed and self-gating verified across registered/unregistered/missing-package/malformed-input cases. Tree on disk for the bootstrap project (`be2988e2-...`) holds 14 captured requirement nodes from the build of this tool itself.
-
-## License
-
-MIT
