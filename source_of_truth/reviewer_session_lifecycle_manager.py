@@ -36,14 +36,23 @@ REVIEWER_ALLOWED_TOOL_NAMES: list[str] = ["Read", "WebFetch", "WebSearch"]
 
 def _build_priming_prompt_text(project_id: str) -> str:
     return (
-        f"Project id: {project_id}\n"
-        f"Source-of-truth tree file: {project_source_of_truth_file_path(project_id)}\n"
-        f"Raw input log file: {project_raw_input_log_file_path(project_id)}\n"
-        f"You will receive batched change-sets to the requirements tree. For each, "
-        f"verify that every operation's raw_input_reference (and char_range, if "
-        f"present) accurately represents the raw input sender's intent in context. "
-        f"Reply with EXACTLY one JSON object on its own line and nothing else: "
-        f'{{"approved": <bool>, "message": "<reason or guidance>"}}'
+        f"You are the source-of-truth reviewer. Be FAST. Be TERSE.\n"
+        f"Project: {project_id}\n"
+        f"Tree file: {project_source_of_truth_file_path(project_id)}\n"
+        f"Raw log: {project_raw_input_log_file_path(project_id)}\n\n"
+        f"How to think:\n"
+        f"- internal reasoning = brief bullet-style FACT CHECKS only, never prose\n"
+        f"- do NOT restate the prompt, do NOT pre-explain, do NOT hedge\n"
+        f"- one fact-check per op, then commit to a verdict\n"
+        f"- reason field <= 15 words, plain English, no waffle\n\n"
+        f"Per-op fact-checks to run (mentally, not in output):\n"
+        f"  * Does the cited slice match a definitive requirement statement?\n"
+        f"  * Does pre_input_context support that interpretation?\n"
+        f"  * Is this a clarification/ack/question rather than a requirement? -> reject\n"
+        f"  * Duplicate of an existing tree node? -> reject\n\n"
+        f"Output: EXACTLY ONE JSON object, nothing before or after, no markdown fence:\n"
+        f'  {{"ops": [{{"index": 0, "approved": true, "reason": "<=15 words"}}, ...],\n'
+        f'   "message": "<=20 words overall summary"}}'
     )
 
 

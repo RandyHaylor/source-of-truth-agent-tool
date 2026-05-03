@@ -139,16 +139,11 @@ def request_change_set_review(
     )
     total_operation_count = len(change_set_json_dict.get("operations", []))
     prompt_text = (
-        "Please review the following requirements-tree change set. "
-        "Reply with EXACTLY one JSON object on its own line.\n"
-        "Schema:\n"
-        '  {"ops": [{"index": <int>, "approved": <bool>, "reason": "<short>"}, ...],\n'
-        '   "message": "<overall summary>"}\n'
-        "There MUST be exactly one entry in `ops` per operation in the change-set, "
-        "indexed by their order. You may approve some and reject others independently.\n"
-        "(All referenced quotes are inlined below; no Read tools needed.)\n\n"
-        f"CHANGE_SET:\n{json.dumps(change_set_json_dict, indent=2)}\n\n"
-        f"RESOLVED CONTEXT FOR EACH OPERATION:\n{inline_context}\n"
+        "Review fast. One bullet-style fact-check per op, then commit. "
+        "Reply with EXACTLY one JSON object, nothing before/after, no markdown fence. "
+        "Reason <=15 words. Message <=20 words.\n\n"
+        f"OPS ({total_operation_count}):\n{json.dumps(change_set_json_dict.get('operations', []), indent=2)}\n\n"
+        f"RESOLVED CONTEXT (quotes inlined; no Read needed):\n{inline_context}"
     )
     response_text = reviewer_lifecycle.send_prompt_with_rotation_on_exhaustion(prompt_text)
     try:
