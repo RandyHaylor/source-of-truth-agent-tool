@@ -16,13 +16,11 @@ from __future__ import annotations
 
 import json
 import os
-import select
-import signal
+import queue
 import subprocess
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from .ai_cli_adapter_interface import (
@@ -177,6 +175,26 @@ class ClaudeCodeReviewerSessionHandleViaResume(PersistentReviewerSessionHandle):
         )
         stderr_drainer_thread.start()
 
+        # Read stdout in a background thread that pushes each line onto a
+        # thread-safe queue. The main loop polls the queue with a timeout so it
+        # can also check the deadline and emit heartbeats. This pattern works
+        # cross-platform; select.select() on pipes is Linux/macOS only.
+        stdout_line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
+        STDOUT_EOF_SENTINEL = None
+
+        def stdout_reader_into_queue() -> None:
+            try:
+                assert process_handle.stdout is not None
+                for line in iter(process_handle.stdout.readline, ""):
+                    stdout_line_queue.put(line)
+            finally:
+                stdout_line_queue.put(STDOUT_EOF_SENTINEL)
+
+        stdout_reader_thread = threading.Thread(
+            target=stdout_reader_into_queue, daemon=True,
+        )
+        stdout_reader_thread.start()
+
         deadline_monotonic = time.monotonic() + self._per_call_timeout_seconds
         last_event_arrived_monotonic = time.monotonic()
         next_heartbeat_due_monotonic = (
@@ -187,7 +205,6 @@ class ClaudeCodeReviewerSessionHandleViaResume(PersistentReviewerSessionHandle):
         timed_out = False
 
         try:
-            assert process_handle.stdout is not None
             while True:
                 now_monotonic = time.monotonic()
                 if now_monotonic > deadline_monotonic:
@@ -212,33 +229,18 @@ class ClaudeCodeReviewerSessionHandleViaResume(PersistentReviewerSessionHandle):
                         now_monotonic + self._heartbeat_after_silent_seconds
                     )
 
-                # Wait up to 0.5s for stdout to become readable so we can also
-                # check the deadline and heartbeat without blocking forever.
-                ready_descriptors, _, _ = select.select(
-                    [process_handle.stdout], [], [], 0.5
-                )
-                if not ready_descriptors:
-                    if process_handle.poll() is not None:
-                        # Child exited; final read drains any remaining buffer.
-                        remaining_text = process_handle.stdout.read() or ""
-                        for trailing_line in remaining_text.splitlines():
-                            self._handle_stdout_line(
-                                trailing_line, accumulated_assistant_text_chunks
-                            )
-                        break
+                try:
+                    queued_line = stdout_line_queue.get(timeout=0.5)
+                except queue.Empty:
                     continue
-
-                line = process_handle.stdout.readline()
-                if not line:
-                    if process_handle.poll() is not None:
-                        break
-                    continue
+                if queued_line is STDOUT_EOF_SENTINEL:
+                    break
                 last_event_arrived_monotonic = time.monotonic()
                 next_heartbeat_due_monotonic = (
                     last_event_arrived_monotonic + self._heartbeat_after_silent_seconds
                 )
                 final_result_text_or_none = self._handle_stdout_line(
-                    line, accumulated_assistant_text_chunks
+                    queued_line, accumulated_assistant_text_chunks
                 )
                 if final_result_text_or_none is not None:
                     final_result_text = final_result_text_or_none
@@ -250,6 +252,7 @@ class ClaudeCodeReviewerSessionHandleViaResume(PersistentReviewerSessionHandle):
                 except OSError:
                     pass
             stderr_drainer_thread.join(timeout=2.0)
+            stdout_reader_thread.join(timeout=2.0)
 
         if timed_out:
             return (
