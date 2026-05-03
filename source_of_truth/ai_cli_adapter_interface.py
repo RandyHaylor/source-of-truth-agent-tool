@@ -6,7 +6,7 @@ The source-of-truth core depends only on this interface; concrete adapters
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 
 class PersistentReviewerSessionHandle(ABC):
@@ -47,4 +47,6 @@ class AiCliAdapterInterface(ABC):
         priming_prompt_text: str,
         allowed_read_paths: list[str],
         allowed_tool_names: list[str],
+        reviewer_model_name: str,
+        streaming_event_appender: Optional[Callable[[str, str], None]] = None,
     ) -> PersistentReviewerSessionHandle: ...

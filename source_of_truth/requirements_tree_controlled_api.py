@@ -18,9 +18,18 @@ from typing import Any, Optional
 from .ai_cli_adapter_interface import AiCliAdapterInterface
 from .config import (
     INTERACTION_TIME_AGENT_GUIDANCE,
+    REVIEWER_MODE_DEFER_UNTIL_FLUSH,
+    REVIEWER_MODE_LIVE_REVIEW_EVERY_SUBMIT,
+    REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
     project_reviewer_thinking_log_file_path,
+    resolve_reviewer_mode_for_project,
 )
 from .conversation_context_injector import build_top_level_injection_text_for_project
+from .deferred_change_sets_queue import (
+    append_change_set_to_deferred_queue,
+    count_pending_deferred_change_sets,
+    read_and_clear_all_deferred_change_sets,
+)
 from .pending_messages_for_raw_input_sender import add_pending_message_for_raw_input_sender
 from .requirements_modification_reviewer import (
     ReviewerVerdict,
@@ -135,8 +144,31 @@ class RequirementsTreeControlledApi:
                 reviewer_thinking_log_path=thinking_log_path,
             )
 
-        # Pre-call user notice — queued so the PostToolUse hook can emit it
-        # via systemMessage (user-only, not echoed into the agent's context).
+        active_reviewer_mode = resolve_reviewer_mode_for_project(self._project_id)
+
+        # MODE: no reviewer -- apply directly after local validation only.
+        if active_reviewer_mode == REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY:
+            return self._apply_change_set_directly_with_no_reviewer(change_set, thinking_log_path)
+
+        # MODE: deferred -- queue and return immediately; reviewer runs at flush time.
+        if active_reviewer_mode == REVIEWER_MODE_DEFER_UNTIL_FLUSH:
+            append_change_set_to_deferred_queue(self._project_id, change_set.to_json_dict())
+            queue_depth_after_append = count_pending_deferred_change_sets(self._project_id)
+            user_message = (
+                f"{operation_count} requirement op(s) DEFERRED for batched review "
+                f"(queue depth now {queue_depth_after_append}). "
+                f"Call flush_deferred_change_sets_for_review() when planning is done."
+            )
+            add_pending_message_for_raw_input_sender(user_message, target_project_id=self._project_id)
+            return ChangeSetSubmissionResult(
+                approved=False,
+                reviewer_message="deferred — not yet reviewed",
+                applied_operation_count=0,
+                message_for_raw_input_sender=f"[source-of-truth] {user_message}",
+                reviewer_thinking_log_path=thinking_log_path,
+            )
+
+        # MODE: live -- contact reviewer now.
         in_flight_user_message = (
             f"Submitting {operation_count} requirement op(s) to the reviewer agent. "
             f"Live reviewer thoughts stream to: {thinking_log_path}"
@@ -144,7 +176,7 @@ class RequirementsTreeControlledApi:
         add_pending_message_for_raw_input_sender(in_flight_user_message, target_project_id=self._project_id)
 
         verdict: ReviewerVerdict = request_change_set_review(
-            self._reviewer_lifecycle, change_set.to_json_dict()
+            self._reviewer_lifecycle, change_set.to_json_dict(), self._project_id
         )
         if not verdict.approved:
             rejection_message = (
@@ -182,6 +214,119 @@ class RequirementsTreeControlledApi:
         return ChangeSetSubmissionResult(
             approved=True,
             reviewer_message=verdict.message,
+            applied_operation_count=operation_count,
+            message_for_raw_input_sender=f"[source-of-truth] {approval_message}",
+            reviewer_thinking_log_path=thinking_log_path,
+        )
+
+    def flush_deferred_change_sets_for_review(self) -> ChangeSetSubmissionResult:
+        """Drain the deferred queue, merge into one change-set, run live review, apply on approval."""
+        thinking_log_path = str(project_reviewer_thinking_log_file_path(self._project_id))
+        drained_entries = read_and_clear_all_deferred_change_sets(self._project_id)
+        if not drained_entries:
+            empty_message = "No deferred change-sets to flush; queue is empty."
+            return ChangeSetSubmissionResult(
+                approved=True,
+                reviewer_message=empty_message,
+                applied_operation_count=0,
+                message_for_raw_input_sender=f"[source-of-truth] {empty_message}",
+                reviewer_thinking_log_path=thinking_log_path,
+            )
+
+        merged_operations: list[dict[str, Any]] = []
+        per_entry_rationales: list[str] = []
+        for entry in drained_entries:
+            cs = entry.get("change_set", {})
+            merged_operations.extend(cs.get("operations", []))
+            rationale = cs.get("submitter_rationale", "").strip()
+            if rationale:
+                per_entry_rationales.append(f"- queued {entry.get('queued_at_iso')}: {rationale}")
+        merged_change_set_payload = {
+            "operations": merged_operations,
+            "submitter_rationale": (
+                f"Flushed batch of {len(drained_entries)} deferred change-sets totaling "
+                f"{len(merged_operations)} ops.\n" + "\n".join(per_entry_rationales)
+            ).strip(),
+        }
+        operation_count = len(merged_operations)
+
+        in_flight_user_message = (
+            f"Flushing {len(drained_entries)} deferred change-set(s) ({operation_count} ops total) "
+            f"to the reviewer agent. Live thoughts: {thinking_log_path}"
+        )
+        add_pending_message_for_raw_input_sender(in_flight_user_message, target_project_id=self._project_id)
+
+        verdict: ReviewerVerdict = request_change_set_review(
+            self._reviewer_lifecycle, merged_change_set_payload, self._project_id
+        )
+        if not verdict.approved:
+            rejection_message = (
+                f"Flushed batch of {operation_count} op(s) REJECTED by reviewer. "
+                f"Notes: {verdict.message}. Full thoughts: {thinking_log_path}"
+            )
+            add_pending_message_for_raw_input_sender(rejection_message, target_project_id=self._project_id)
+            return ChangeSetSubmissionResult(
+                approved=False,
+                reviewer_message=verdict.message,
+                applied_operation_count=0,
+                message_for_raw_input_sender=f"[source-of-truth] {rejection_message}",
+                reviewer_thinking_log_path=thinking_log_path,
+            )
+        try:
+            current_tree = load_requirements_tree(self._project_id)
+            new_tree = apply_change_set_to_tree(current_tree, merged_operations)
+            save_requirements_tree_atomically(new_tree)
+        except ChangeSetApplicationError as exc:
+            return ChangeSetSubmissionResult(
+                approved=False,
+                reviewer_message=f"Approved by reviewer but failed to apply: {exc}",
+                applied_operation_count=0,
+                message_for_raw_input_sender=(
+                    f"[source-of-truth] Reviewer APPROVED flushed batch but apply failed: {exc}. "
+                    f"Tree unchanged. Reviewer thoughts: {thinking_log_path}"
+                ),
+                reviewer_thinking_log_path=thinking_log_path,
+            )
+        approval_message = (
+            f"Flushed batch of {operation_count} op(s) APPROVED + applied. "
+            f"Notes: {verdict.message}. Thoughts log: {thinking_log_path}"
+        )
+        add_pending_message_for_raw_input_sender(approval_message, target_project_id=self._project_id)
+        return ChangeSetSubmissionResult(
+            approved=True,
+            reviewer_message=verdict.message,
+            applied_operation_count=operation_count,
+            message_for_raw_input_sender=f"[source-of-truth] {approval_message}",
+            reviewer_thinking_log_path=thinking_log_path,
+        )
+
+    def _apply_change_set_directly_with_no_reviewer(
+        self, change_set: RequirementsTreeChangeSet, thinking_log_path: str,
+    ) -> ChangeSetSubmissionResult:
+        operation_count = len(change_set.operations)
+        try:
+            current_tree = load_requirements_tree(self._project_id)
+            new_tree = apply_change_set_to_tree(current_tree, change_set.operations)
+            save_requirements_tree_atomically(new_tree)
+        except ChangeSetApplicationError as exc:
+            error_message = (
+                f"{operation_count} op(s) FAILED to apply (no-reviewer mode): {exc}"
+            )
+            add_pending_message_for_raw_input_sender(error_message, target_project_id=self._project_id)
+            return ChangeSetSubmissionResult(
+                approved=False,
+                reviewer_message=str(exc),
+                applied_operation_count=0,
+                message_for_raw_input_sender=f"[source-of-truth] {error_message}",
+                reviewer_thinking_log_path=thinking_log_path,
+            )
+        approval_message = (
+            f"{operation_count} op(s) APPLIED (no-reviewer mode — no human/AI review performed)."
+        )
+        add_pending_message_for_raw_input_sender(approval_message, target_project_id=self._project_id)
+        return ChangeSetSubmissionResult(
+            approved=True,
+            reviewer_message="no-reviewer mode: applied without review",
             applied_operation_count=operation_count,
             message_for_raw_input_sender=f"[source-of-truth] {approval_message}",
             reviewer_thinking_log_path=thinking_log_path,

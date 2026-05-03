@@ -19,6 +19,7 @@ from .config import (
     project_raw_input_log_file_path,
     project_reviewer_thinking_log_file_path,
     project_source_of_truth_file_path,
+    resolve_reviewer_model_name_for_project,
     save_project_settings,
 )
 
@@ -40,10 +41,9 @@ def _build_priming_prompt_text(project_id: str) -> str:
         f"Raw input log file: {project_raw_input_log_file_path(project_id)}\n"
         f"You will receive batched change-sets to the requirements tree. For each, "
         f"verify that every operation's raw_entry_reference (and char_range, if "
-        f"present) accurately represents the user's intent in context. Reply with "
-        f"a single JSON object: "
-        f'{{"approved": <bool>, "message": "<reason or guidance>"}} '
-        f"and then a literal sentinel line `<<<END_OF_RESPONSE>>>`."
+        f"present) accurately represents the raw input sender's intent in context. "
+        f"Reply with EXACTLY one JSON object on its own line and nothing else: "
+        f'{{"approved": <bool>, "message": "<reason or guidance>"}}'
     )
 
 
@@ -56,12 +56,30 @@ class ReviewerSessionLifecycleManager:
     def get_or_spawn_current_reviewer(self) -> PersistentReviewerSessionHandle:
         if self._current_handle is not None and self._current_handle.is_alive():
             return self._current_handle
+
+        def streaming_event_appender_for_this_reviewer(event_kind: str, event_body_text: str) -> None:
+            # The handle's session_id is the same id we'll eventually log under;
+            # for streaming events we don't have it yet at construction time so
+            # we pass a placeholder and let the appender resolve dynamically.
+            current_id = (
+                self._current_handle.session_id
+                if self._current_handle is not None else "spawning"
+            )
+            self._append_to_thinking_log(f"STREAM_{event_kind}", current_id, event_body_text)
+
+        resolved_model_name = resolve_reviewer_model_name_for_project(self._project_id)
+        self._append_to_thinking_log(
+            "SPAWN", "(new)",
+            f"resolved_reviewer_model_name={resolved_model_name}",
+        )
         handle = self._ai_cli_adapter.spawn_persistent_reviewer_session(
             priming_prompt_text=_build_priming_prompt_text(self._project_id),
             allowed_read_paths=[
                 str(project_directory_for(self._project_id)),
             ],
             allowed_tool_names=REVIEWER_ALLOWED_TOOL_NAMES,
+            reviewer_model_name=resolved_model_name,
+            streaming_event_appender=streaming_event_appender_for_this_reviewer,
         )
         self._current_handle = handle
         settings = load_project_settings(self._project_id)
