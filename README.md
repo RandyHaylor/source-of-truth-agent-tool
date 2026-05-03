@@ -1,3 +1,13 @@
+---
+agent_instruction_for_ai_readers: |
+  This repo is a Claude Code skill. README.md is human-facing documentation.
+  The actionable agent instructions live in SKILL.md next to this file.
+  If you are an AI agent about to help a user set up, install, configure,
+  use, or troubleshoot this tool, READ SKILL.md FIRST and follow the
+  project-start-wizard.md it points at. Do not infer setup steps from this
+  README alone.
+---
+
 # source-of-truth-agent-tool
 
 **Stop your AI coding agent from drifting away from what you actually asked for.**
