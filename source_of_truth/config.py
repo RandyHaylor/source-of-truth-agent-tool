@@ -23,7 +23,7 @@ INTERACTION_TIME_AGENT_GUIDANCE: str = (
     "  - confirm TECH STACK / PLAN / HIGH-LEVEL STRUCTURE -> ack -> add nodes\n"
     "  - on your A/B/C question + user pick: char_range the letter; pre_text anchors meaning\n"
     "  - user correction/feedback -> capture verbatim (top-level if cross-cutting)\n"
-    "Batch related captures into ONE submit_requirements_tree_change_set call.\n"
+    "Batch related captures into ONE `source-of-truth submit-change-set` invocation.\n"
     "When you submit:\n"
     "  - The result includes `message_for_raw_input_sender` — RELAY IT VERBATIM to the user before\n"
     "    continuing other work, so they know review is in flight + where the log is.\n"
@@ -35,7 +35,11 @@ INTERACTION_TIME_AGENT_GUIDANCE: str = (
 
 TOP_LEVEL_INJECTION_BLURB_TEMPLATE: str = (
     "[SoT] top: {top_level_node_json}\n"
-    "API: search_requirements_nodes(q) | get_node_by_id(id) | submit_requirements_tree_change_set(cs)\n"
+    "API (on PATH): `source-of-truth search-nodes <project_id> <q>` | "
+    "`source-of-truth get-node <project_id> <node_id>` | "
+    "`source-of-truth submit-change-set <project_id> "
+    "[--add-top-level <raw_input_id> | @path/to/file.json | - (stdin) | <raw json>]`. "
+    "See SKILL.md in the source-of-truth-agent-tool skill folder for full verb reference.\n"
     "Capture rule: on every definitive user reply (explicit OR pick from your A/B/C), "
     "queue an add/add_top_level op referencing the raw_input_id (just logged); "
     "char_range is FORBIDDEN when submission <=500 chars (cite whole entry) "
