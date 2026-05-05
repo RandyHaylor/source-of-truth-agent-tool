@@ -28,3 +28,38 @@ The full step-by-step setup walkthrough lives at `project-start-wizard.md` next 
 If the user says "skip ahead" or "I already did X," you can fast-forward, but always confirm the prior steps actually produced the expected on-disk state before moving on.
 
 If at any point you find a missing prerequisite (install dir not present, settings.json missing the hook entries, etc.), re-run `install.py` rather than improvising a workaround.
+
+## After setup — capture model in one screen
+
+Once the wizard finishes, the agent captures requirements via the on-PATH `source-of-truth` wrapper. Three rules to remember:
+
+1. **Every node has a parent.** `parent_id` is required on every `add` op. Use `"0"` for top-level only when no appropriate parent exists. Prefer organizing under a group node (letter id like `a`, `b`, `aa`).
+2. **Every node has a title.** `short_neutral_title` is required, 1–50 chars, the SUBJECT of the requirement (not the spec). The reviewer will rewrite (via `amended_short_title`) if a title overreaches the cited slice; ops aren't rejected for that.
+3. **Group nodes organize the tree.** `add_group` op (or the combo shortcut) creates a group with auto-allocated letter id.
+
+Three convenience-flag shortcuts for `submit-change-set`, listed in promotion order:
+
+```bash
+# Combo (encouraged) — creates a new group AND a leaf inside it in one change-set
+source-of-truth submit-change-set <project_id> \
+  --add <raw_input_id> --parent <pid_or_letter> --title "<leaf>" --new-group "<group title>"
+
+# Leaf only — under an existing parent (group letter id, leaf id, or "0")
+source-of-truth submit-change-set <project_id> \
+  --add <raw_input_id> --parent <pid_or_letter> --title "<leaf title>"
+
+# Group only
+source-of-truth submit-change-set <project_id> \
+  --add-group --parent <pid_or_letter> --title "<group title>"
+```
+
+Read / view:
+
+```bash
+source-of-truth show-tree   <project_id>            # default: indented "<id> <title>" only
+source-of-truth show-tree   <project_id> --show-all # add inlined raw quote text for top 2 levels
+source-of-truth read        <project_id> <id> [<id> ...]   # mixed leaf + group ids
+source-of-truth search-nodes <project_id> <query>
+```
+
+JSON form is still available for multi-op change-sets (`submit-change-set <pid> '<json>'` or `@file.json` or `-` for stdin). See `README.md` for the full op schema (add, add_group, reparent, remove, modify_reference, reorder_children).

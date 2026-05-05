@@ -40,12 +40,12 @@ Show the user the candidate session_id(s) you found and confirm which one is cur
 Once the session_id is confirmed, run:
 
 ```bash
-sot init-and-register <session_id> ~/.claude/projects/<encoded-cwd>/<session_id>.jsonl
+source-of-truth init-and-register <session_id> ~/.claude/projects/<encoded-cwd>/<session_id>.jsonl
 ```
 
 This creates `~/.source-of-truth/projects/<session_id>/` with an empty tree and adds the session as a member. By convention `project_id == initializing session_id`.
 
-If `sot` isn't on PATH, fall back to:
+If `source-of-truth` isn't on PATH, fall back to:
 
 ```bash
 python3 -c "import sys; sys.path.insert(0, '/path/to/source-of-truth'); from source_of_truth.cli_entrypoint import _main; sys.exit(_main())" init-and-register <session_id> <conversation_path>
@@ -61,12 +61,12 @@ Ask the user which mode they want, with this short explanation:
 
 - **live** (default) — every requirement-capture submit hits a Haiku reviewer (~13–18s/call). Safest. Pick this if you want maximum protection against the agent miscapturing.
 - **none** — reviewer never called; ops apply directly after local validation. Fastest and free. Pick this if you trust the agent and want raw speed.
-- **deferred** — submits queue up. Tree stays unchanged until the agent calls `flush_deferred_change_sets_for_review()` to merge and review the batch. Pick this if the agent will do extended planning before any review is useful.
+- **deferred** — submits queue up. Tree stays unchanged until the agent runs `source-of-truth flush-deferred <project_id>` (or calls the equivalent in-process API) to merge and review the batch. Pick this if the agent will do extended planning before any review is useful.
 
 Then run:
 
 ```bash
-sot set-mode <session_id> live          # or none, or deferred
+source-of-truth set-mode <session_id> live          # or none, or deferred
 ```
 
 Confirm the output says the override was set.
@@ -78,7 +78,7 @@ Confirm the output says the override was set.
 Ask if the user wants the agent to know about specific filesystem paths (e.g. their working repo, reference dirs):
 
 ```bash
-sot add-path <session_id> /absolute/path/to/their/repo
+source-of-truth add-path <session_id> /absolute/path/to/their/repo
 ```
 
 Paths must exist (validated via `os.path.exists`). Stored on a special project-paths node, not subject to reviewer (paths are facts, not statements).
@@ -112,7 +112,7 @@ This grounds future turns: the agent now knows the project is live and can start
 
 If the user works across multiple Claude Code sessions in the same project, suggest they drop a `CLAUDE.md` (or note in their existing one) at the working dir saying:
 
-> "This directory is registered to source-of-truth project `<project_id>`. To use SoT, run `sot add-session <project_id> $CURRENT_SESSION_ID <path-to-jsonl>` once at the start of any new session."
+> "This directory is registered to source-of-truth project `<project_id>`. To use SoT, run `source-of-truth add-session <project_id> $CURRENT_SESSION_ID <path-to-jsonl>` once at the start of any new session."
 
 That way new sessions know to enroll themselves into the same project rather than starting fresh ones.
 
