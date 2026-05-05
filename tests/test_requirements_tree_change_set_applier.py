@@ -13,20 +13,20 @@ from source_of_truth.requirements_tree_node_schema import RequirementsTree
 
 def _build_tree_with_two_top_level_nodes_each_with_one_child() -> RequirementsTree:
     tree = RequirementsTree.empty_for_project("proj-x")
-    add_top_a = {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 1}}
-    add_top_b = {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 2}}
+    add_top_a = {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": 1}, "short_neutral_title": "top a"}
+    add_top_b = {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": 2}, "short_neutral_title": "top b"}
     tree = apply_change_set_to_tree(tree, [add_top_a, add_top_b])
     add_child_to_a = {"op": "add", "parent_id": tree.list_top_level_node_ids()[0],
-                      "raw_input_reference": {"raw_input_id": 3}}
+                      "raw_input_reference": {"raw_input_id": 3}, "short_neutral_title": "child a"}
     add_child_to_b = {"op": "add", "parent_id": tree.list_top_level_node_ids()[1],
-                      "raw_input_reference": {"raw_input_id": 4}}
+                      "raw_input_reference": {"raw_input_id": 4}, "short_neutral_title": "child b"}
     return apply_change_set_to_tree(tree, [add_child_to_a, add_child_to_b])
 
 
-def test_add_top_level_creates_node_and_registers_at_top():
+def test_add_op_with_parent_zero_creates_top_level_node():
     tree = RequirementsTree.empty_for_project("p")
     new_tree = apply_change_set_to_tree(tree, [
-        {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 0}}
+        {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": 0}, "short_neutral_title": "topnode"}
     ])
     assert len(new_tree.list_top_level_node_ids()) == 1
     assert len(new_tree.nodes_by_id) == 1
@@ -74,7 +74,7 @@ def test_reorder_children_requires_same_set_and_reorders():
     parent_a = tree.list_top_level_node_ids()[0]
     tree = apply_change_set_to_tree(tree, [{
         "op": "add", "parent_id": parent_a,
-        "raw_input_reference": {"raw_input_id": 5},
+        "raw_input_reference": {"raw_input_id": 5}, "short_neutral_title": "extra child",
     }])
     children = list(tree.nodes_by_id[parent_a].child_node_ids)
     reversed_children = list(reversed(children))

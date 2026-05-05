@@ -11,7 +11,6 @@ from typing import Any
 from .requirements_tree_change_set_schema import (
     OPERATION_KIND_ADD,
     OPERATION_KIND_ADD_GROUP,
-    OPERATION_KIND_ADD_TOP_LEVEL,
     OPERATION_KIND_MODIFY_REFERENCE,
     OPERATION_KIND_REMOVE,
     OPERATION_KIND_REORDER_CHILDREN,
@@ -32,6 +31,29 @@ from .requirements_tree_node_schema import (
 
 class ChangeSetApplicationError(ValueError):
     pass
+
+
+SHORT_NEUTRAL_TITLE_MAX_CHARS: int = 50
+
+
+def _validate_short_neutral_title_or_raise(title_value: Any, op_label_for_error_message: str) -> str:
+    if not isinstance(title_value, str) or len(title_value) == 0:
+        raise ChangeSetApplicationError(
+            f"{op_label_for_error_message} requires non-empty short_neutral_title (1-50 chars); got {title_value!r}"
+        )
+    if len(title_value) > SHORT_NEUTRAL_TITLE_MAX_CHARS:
+        raise ChangeSetApplicationError(
+            f"{op_label_for_error_message} short_neutral_title length {len(title_value)} exceeds max 50 chars"
+        )
+    return title_value
+
+
+def _require_explicit_parent_id_string_or_raise(operation: dict, op_label_for_error_message: str) -> str:
+    if "parent_id" not in operation:
+        raise ChangeSetApplicationError(
+            f"{op_label_for_error_message} requires explicit parent_id (use '0' for top-level)"
+        )
+    return _coerce_parent_id_to_string_with_top_level_sentinel(operation.get("parent_id"))
 
 
 def _allocate_new_quote_leaf_node_id(tree: RequirementsTree) -> str:
@@ -61,9 +83,9 @@ def apply_change_set_to_tree(
         op_kind = operation["op"]
 
         if op_kind == OPERATION_KIND_ADD:
-            # parent_id of TOP_LEVEL_PARENT_SENTINEL ("0") means add at root with no parent node lookup.
-            requested_parent_id = _coerce_parent_id_to_string_with_top_level_sentinel(
-                operation.get("parent_id")
+            requested_parent_id = _require_explicit_parent_id_string_or_raise(operation, "add op")
+            validated_short_neutral_title = _validate_short_neutral_title_or_raise(
+                operation.get("short_neutral_title"), "add op"
             )
             if requested_parent_id != TOP_LEVEL_PARENT_SENTINEL:
                 parent_node = _require_node(new_tree, requested_parent_id)
@@ -77,28 +99,15 @@ def apply_change_set_to_tree(
                 raw_input_reference=RawInputReference.from_json_dict(
                     operation["raw_input_reference"]
                 ),
-                short_neutral_title=operation.get("short_neutral_title", ""),
+                short_neutral_title=validated_short_neutral_title,
             )
             if parent_node is not None:
                 parent_node.child_node_ids.append(new_node_id)
 
-        elif op_kind == OPERATION_KIND_ADD_TOP_LEVEL:
-            # Legacy op kind: still supported in the applier so existing change-sets
-            # in flight don't break; T7 will remove this entirely.
-            new_node_id = _allocate_new_quote_leaf_node_id(new_tree)
-            new_tree.nodes_by_id[new_node_id] = RequirementsTreeNode(
-                node_id=new_node_id,
-                parent_id=TOP_LEVEL_PARENT_SENTINEL,
-                kind=QUOTE_REFERENCE_NODE_KIND,
-                raw_input_reference=RawInputReference.from_json_dict(
-                    operation["raw_input_reference"]
-                ),
-                short_neutral_title=operation.get("short_neutral_title", ""),
-            )
-
         elif op_kind == OPERATION_KIND_ADD_GROUP:
-            requested_parent_id = _coerce_parent_id_to_string_with_top_level_sentinel(
-                operation.get("parent_id")
+            requested_parent_id = _require_explicit_parent_id_string_or_raise(operation, "add_group op")
+            validated_short_neutral_title = _validate_short_neutral_title_or_raise(
+                operation.get("short_neutral_title"), "add_group op"
             )
             if requested_parent_id != TOP_LEVEL_PARENT_SENTINEL:
                 parent_node = _require_node(new_tree, requested_parent_id)
@@ -109,7 +118,7 @@ def apply_change_set_to_tree(
                 node_id=new_group_node_id,
                 parent_id=requested_parent_id,
                 kind=GROUP_NODE_KIND,
-                short_neutral_title=operation.get("short_neutral_title", ""),
+                short_neutral_title=validated_short_neutral_title,
             )
             if parent_node is not None:
                 parent_node.child_node_ids.append(new_group_node_id)

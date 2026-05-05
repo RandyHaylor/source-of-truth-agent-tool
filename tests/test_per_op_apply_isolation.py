@@ -13,7 +13,7 @@ from source_of_truth.requirements_tree_node_schema import RequirementsTree
 def _seed_tree_with_one_top_level_node() -> RequirementsTree:
     tree = RequirementsTree.empty_for_project("p")
     return apply_change_set_to_tree(tree, [
-        {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 0}}
+        {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": 0}, "short_neutral_title": "seed"}
     ])
 
 
@@ -21,9 +21,9 @@ def test_isolation_applies_good_ops_and_skips_only_the_bad_one():
     tree = _seed_tree_with_one_top_level_node()
     valid_top_node_id = tree.list_top_level_node_ids()[0]
     operations = [
-        {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 1}},
+        {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": 1}, "short_neutral_title": "n1"},
         {"op": "remove", "node_id": "99999"},  # bad: nonexistent node
-        {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 2}},
+        {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": 2}, "short_neutral_title": "n2"},
     ]
     new_tree, outcomes = apply_change_set_to_tree_with_per_op_isolation(tree, operations)
     assert outcomes[0] == {"operation_index": 0, "applied": True}
@@ -38,8 +38,8 @@ def test_isolation_applies_good_ops_and_skips_only_the_bad_one():
 def test_all_ops_succeed_returns_all_applied_true():
     tree = _seed_tree_with_one_top_level_node()
     operations = [
-        {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 5}},
-        {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 6}},
+        {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": 5}, "short_neutral_title": "n5"},
+        {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": 6}, "short_neutral_title": "n6"},
     ]
     new_tree, outcomes = apply_change_set_to_tree_with_per_op_isolation(tree, operations)
     assert all(o["applied"] for o in outcomes)
@@ -58,7 +58,7 @@ def test_input_tree_is_not_mutated_by_isolation_apply():
     tree = _seed_tree_with_one_top_level_node()
     snapshot_before = copy.deepcopy(tree.to_json_dict())
     apply_change_set_to_tree_with_per_op_isolation(tree, [
-        {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 9}},
+        {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": 9}, "short_neutral_title": "n9"},
         {"op": "remove", "node_id": "99999"},
     ])
     assert tree.to_json_dict() == snapshot_before

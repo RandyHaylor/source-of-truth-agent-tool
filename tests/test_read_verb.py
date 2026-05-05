@@ -23,7 +23,12 @@ def _seed_project_with_one_quote_leaf_and_one_group(project_id: str) -> int:
     )
     raw_input_id = log_result["raw_input_id"]
     _handle_submit_change_set([
-        project_id, "--add-top-level", str(raw_input_id),
+        project_id,
+        json.dumps({"operations": [{
+            "op": "add", "parent_id": "0",
+            "raw_input_reference": {"raw_input_id": raw_input_id},
+            "short_neutral_title": "seed leaf",
+        }]}),
     ])
     _handle_submit_change_set([
         project_id,

@@ -30,29 +30,34 @@ from source_of_truth.requirements_tree_store import (
 from source_of_truth.requirements_tree_node_schema import RequirementsTree
 
 
+def _build_one_op_top_level_leaf_change_set_json(raw_input_id: int, short_title: str = "test t") -> str:
+    return json.dumps({
+        "operations": [{
+            "op": "add",
+            "parent_id": "0",
+            "raw_input_reference": {"raw_input_id": raw_input_id},
+            "short_neutral_title": short_title,
+        }],
+    })
+
+
 def test_per_turn_additional_context_line_is_one_line_with_two_commands():
     line = _build_per_turn_additional_context_line(project_id="proj-x", raw_input_id=42)
     assert "\n" not in line, "must be a single line"
     assert "id:42" in line
-    assert "source-of-truth submit-change-set proj-x --add-top-level 42" in line
+    assert "source-of-truth submit-change-set proj-x" in line
+    assert "raw_input_id=42" in line
     assert "source-of-truth show-tree proj-x" in line
     assert "SKILL.md" in line
 
 
-def test_resolve_change_set_payload_short_form_add_top_level():
-    payload = _resolve_change_set_payload_from_argv_after_project_id(
-        ["--add-top-level", "7"]
-    )
-    assert payload["operations"] == [{
-        "op": "add_top_level",
-        "raw_input_reference": {"raw_input_id": 7},
-    }]
-
-
-def test_resolve_change_set_payload_short_form_rejects_non_integer_id():
+def test_add_top_level_shortcut_no_longer_exists():
+    """The --add-top-level convenience flag was removed in T7 to force the agent
+    to think about parent_node_id and short_neutral_title. JSON form is the only
+    path until T9 introduces the new flag forms."""
     with pytest.raises(ValueError):
         _resolve_change_set_payload_from_argv_after_project_id(
-            ["--add-top-level", "not-an-int"]
+            ["--add-top-level", "7"]
         )
 
 
@@ -92,7 +97,7 @@ def test_submit_change_set_short_form_applies_under_no_reviewer_mode(capsys):
     ))
     log_result = append_submission_to_raw_input_log("p-cli", "s", "yes", "")
     raw_input_id = log_result["raw_input_id"]
-    return_code = _handle_submit_change_set(["p-cli", "--add-top-level", str(raw_input_id)])
+    return_code = _handle_submit_change_set(["p-cli", _build_one_op_top_level_leaf_change_set_json(raw_input_id)])
     captured = capsys.readouterr()
     assert return_code == 0
     payload = json.loads(captured.out)
@@ -118,7 +123,7 @@ def test_show_tree_inlines_quote_text_for_top_level_nodes(capsys):
     log_result = append_submission_to_raw_input_log(
         "p-show2", "session-x", "the actual requirement text the user typed", ""
     )
-    _handle_submit_change_set(["p-show2", "--add-top-level", str(log_result["raw_input_id"])])
+    _handle_submit_change_set(["p-show2", _build_one_op_top_level_leaf_change_set_json(log_result["raw_input_id"])])
     capsys.readouterr()
     rc = _handle_show_tree(["p-show2"])
     captured = capsys.readouterr()
@@ -133,7 +138,7 @@ def test_get_node_returns_node_payload_for_existing_id(capsys):
         project_id="p-get", reviewer_mode_override=REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
     ))
     log_result = append_submission_to_raw_input_log("p-get", "s", "x", "")
-    _handle_submit_change_set(["p-get", "--add-top-level", str(log_result["raw_input_id"])])
+    _handle_submit_change_set(["p-get", _build_one_op_top_level_leaf_change_set_json(log_result["raw_input_id"])])
     capsys.readouterr()  # discard submit output
 
     rc = _handle_get_node(["p-get", "1"])
@@ -158,7 +163,7 @@ def test_search_nodes_returns_matches_payload(capsys):
         project_id="p-search", reviewer_mode_override=REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
     ))
     log_result = append_submission_to_raw_input_log("p-search", "s", "haystack needle haystack", "")
-    _handle_submit_change_set(["p-search", "--add-top-level", str(log_result["raw_input_id"])])
+    _handle_submit_change_set(["p-search", _build_one_op_top_level_leaf_change_set_json(log_result["raw_input_id"])])
     capsys.readouterr()
 
     rc = _handle_search_nodes(["p-search", "needle"])

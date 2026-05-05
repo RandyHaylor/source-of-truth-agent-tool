@@ -53,8 +53,10 @@ def _build_one_op_change_set(raw_input_id: int) -> dict:
     return {
         "submitter_rationale": "test",
         "operations": [{
-            "op": "add_top_level",
+            "op": "add",
+            "parent_id": "0",
             "raw_input_reference": {"raw_input_id": raw_input_id},
+            "short_neutral_title": "test top",
         }],
     }
 
@@ -206,9 +208,9 @@ def test_partial_per_op_verdicts_apply_only_approved_ops_in_live_mode():
     three_op_change_set = {
         "submitter_rationale": "test partial",
         "operations": [
-            {"op": "add_top_level", "raw_input_reference": {"raw_input_id": entry_a}},
-            {"op": "add_top_level", "raw_input_reference": {"raw_input_id": entry_b}},
-            {"op": "add_top_level", "raw_input_reference": {"raw_input_id": entry_c}},
+            {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": entry_a}, "short_neutral_title": "ta"},
+            {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": entry_b}, "short_neutral_title": "tb"},
+            {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": entry_c}, "short_neutral_title": "tc"},
         ],
     }
     partial_verdict = ReviewerVerdict(

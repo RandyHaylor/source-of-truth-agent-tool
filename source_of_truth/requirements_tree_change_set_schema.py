@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any
 
 OPERATION_KIND_ADD: str = "add"
-OPERATION_KIND_ADD_TOP_LEVEL: str = "add_top_level"
 OPERATION_KIND_ADD_GROUP: str = "add_group"
 OPERATION_KIND_REPARENT: str = "reparent"
 OPERATION_KIND_REMOVE: str = "remove"
@@ -14,7 +13,6 @@ OPERATION_KIND_REORDER_CHILDREN: str = "reorder_children"
 
 ALL_OPERATION_KINDS: tuple[str, ...] = (
     OPERATION_KIND_ADD,
-    OPERATION_KIND_ADD_TOP_LEVEL,
     OPERATION_KIND_ADD_GROUP,
     OPERATION_KIND_REPARENT,
     OPERATION_KIND_REMOVE,

@@ -49,7 +49,7 @@ def _build_per_turn_additional_context_line(project_id: str, raw_input_id: int) 
     """One-line action-shaped block injected on every user prompt."""
     return (
         f"source-of-truth: prompt logged id:{raw_input_id}, "
-        f"add as requirement: source-of-truth submit-change-set {project_id} --add-top-level {raw_input_id}, "
+        f"add as requirement: build add-op JSON with raw_input_id={raw_input_id}, parent_id (use '0' for top-level), short_neutral_title (1-50 chars) and submit via source-of-truth submit-change-set {project_id} '<json>', "
         f"view project requirements: source-of-truth show-tree {project_id}, "
         f"read SKILL.md for more"
     )
@@ -170,23 +170,13 @@ def _resolve_change_set_payload_from_argv_after_project_id(
     payload_args: list[str], stdin_text_supplier=None
 ) -> dict:
     """Three input modes for submit-change-set:
-       - --add-top-level <raw_input_id>     -> short form, builds a 1-op change-set
        - @path/to/file.json                 -> read file
        - -                                  -> read JSON from stdin
        - <raw json>                         -> parse argv[0] as JSON
+
+    The convenience flag forms (--add / --add-group / --new-group combo) are
+    introduced in T9; until then the JSON form is the only path.
     """
-    if len(payload_args) >= 2 and payload_args[0] == "--add-top-level":
-        try:
-            raw_input_id = int(payload_args[1])
-        except ValueError as exc:
-            raise ValueError(f"--add-top-level expects integer raw_input_id; got {payload_args[1]!r}") from exc
-        return {
-            "submitter_rationale": f"Captured raw_input_id={raw_input_id} as a top-level requirement.",
-            "operations": [{
-                "op": "add_top_level",
-                "raw_input_reference": {"raw_input_id": raw_input_id},
-            }],
-        }
     if len(payload_args) == 1 and payload_args[0] == "-":
         if stdin_text_supplier is None:
             stdin_text = sys.stdin.read()
@@ -200,14 +190,14 @@ def _resolve_change_set_payload_from_argv_after_project_id(
         return json.loads(payload_args[0])
     raise ValueError(
         "submit-change-set payload must be one of: "
-        "--add-top-level <raw_input_id> | @path/to/file.json | - (stdin) | <raw json>"
+        "@path/to/file.json | - (stdin) | <raw json>"
     )
 
 
 def _handle_submit_change_set(argv: list[str]) -> int:
     if len(argv) < 2:
         print(
-            "Usage: source-of-truth submit-change-set <project_id> [--add-top-level <raw_input_id> | @path/to/file.json | - | <raw json>]",
+            "Usage: source-of-truth submit-change-set <project_id> [@path/to/file.json | - (stdin) | <raw json>]",
             file=sys.stderr,
         )
         return 2
