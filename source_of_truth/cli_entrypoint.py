@@ -49,7 +49,10 @@ def _build_per_turn_additional_context_line(project_id: str, raw_input_id: int) 
     """One-line action-shaped block injected on every user prompt."""
     return (
         f"source-of-truth: prompt logged id:{raw_input_id}, "
-        f"add as requirement: build add-op JSON with raw_input_id={raw_input_id}, parent_id (use '0' for top-level), short_neutral_title (1-50 chars) and submit via source-of-truth submit-change-set {project_id} '<json>', "
+        f"add as requirement: build add-op JSON with raw_input_id={raw_input_id}, "
+        f"<parent_id> (use '0' for top-level or a node id like '12' or 'a'), "
+        f"<short_neutral_title> (1-50 chars; a noun-phrase TOPIC like \"vendor placement\" -- NOT a sentence/rule), "
+        f"submit via source-of-truth submit-change-set {project_id} '<json>', "
         f"view project requirements: source-of-truth show-tree {project_id}, "
         f"read SKILL.md for more"
     )
