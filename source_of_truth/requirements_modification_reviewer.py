@@ -32,6 +32,7 @@ class PerOperationVerdict:
     operation_index: int
     approved: bool
     reason: str = ""
+    amended_short_title: "str | None" = None  # if non-None, persist this title instead of submitter's
 
 
 @dataclass
@@ -156,10 +157,17 @@ def _parse_per_operation_verdicts(
         index = raw.get("index")
         if not isinstance(index, int) or index < 0 or index >= total_operation_count:
             continue
+        amended_title_raw_value = raw.get("amended_short_title")
+        amended_short_title = (
+            str(amended_title_raw_value)
+            if isinstance(amended_title_raw_value, str) and amended_title_raw_value.strip() != ""
+            else None
+        )
         parsed.append(PerOperationVerdict(
             operation_index=index,
             approved=bool(raw.get("approved", False)),
             reason=str(raw.get("reason", "")),
+            amended_short_title=amended_short_title,
         ))
     return parsed
 
@@ -177,6 +185,14 @@ def request_change_set_review(
         "Review fast. One bullet-style fact-check per op, then commit. "
         "Reply with EXACTLY one JSON object, nothing before/after, no markdown fence. "
         "Reason <=15 words. Message <=20 words.\n\n"
+        "TITLE RULE for `add` and `add_group` ops: short_neutral_title must be the\n"
+        "SUBJECT of the requirement (1-50 chars), not the full spec. Reject titles\n"
+        "that are empty or >50 chars. If a title adds detail or covers more than\n"
+        "the cited slice supports (e.g. cited='yes [to vendor on even floors]',\n"
+        "title='vendor every other floor with stair exclusion'), do NOT reject -\n"
+        "instead set per-op `amended_short_title` to a more generic version that\n"
+        "stays within what the cited slice supports. The amended title will be\n"
+        "persisted automatically. Approve such ops with the amended title set.\n\n"
         "EXPLICITLY-SUPPORTED PATTERNS (do NOT reject for any of these reasons):\n"
         " (1) BRIEF CONFIRMATION: CITED SLICE may be a brief confirmation such as 'yes', "
         "'no', 'A', 'B', 'C', 'go', 'ok', 'do it', etc. The actual requirement is the "

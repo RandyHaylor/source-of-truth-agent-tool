@@ -198,9 +198,20 @@ class RequirementsTreeControlledApi:
                 reviewer_thinking_log_path=thinking_log_path,
             )
 
-        approved_operations_in_original_order = [
-            change_set.operations[i] for i in sorted(approved_indices)
-        ]
+        # Apply reviewer-provided amended_short_title to each approved op before
+        # building the apply list, so the persisted node carries the more-generic
+        # title the reviewer asked for.
+        amended_title_by_op_index = {
+            v.operation_index: v.amended_short_title
+            for v in verdict.per_operation_verdicts
+            if v.approved and v.amended_short_title
+        }
+        approved_operations_in_original_order = []
+        for op_index in sorted(approved_indices):
+            op_dict = dict(change_set.operations[op_index])
+            if op_index in amended_title_by_op_index:
+                op_dict["short_neutral_title"] = amended_title_by_op_index[op_index]
+            approved_operations_in_original_order.append(op_dict)
 
         # Apply approved ops one at a time so a single bad op doesn't sink
         # the others. Returns per-op outcomes so we can tell the agent which
