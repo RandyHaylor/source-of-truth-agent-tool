@@ -140,7 +140,7 @@ def test_get_node_returns_node_payload_for_existing_id(capsys):
     captured = capsys.readouterr()
     assert rc == 0
     parsed = json.loads(captured.out)
-    assert parsed["node"]["node_id"] == 1
+    assert parsed["node"]["node_id"] == "1"
 
 
 def test_get_node_returns_error_for_missing_id(capsys):

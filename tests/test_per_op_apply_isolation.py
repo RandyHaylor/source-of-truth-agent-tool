@@ -19,10 +19,10 @@ def _seed_tree_with_one_top_level_node() -> RequirementsTree:
 
 def test_isolation_applies_good_ops_and_skips_only_the_bad_one():
     tree = _seed_tree_with_one_top_level_node()
-    valid_top_node_id = tree.top_level_node_ids[0]
+    valid_top_node_id = tree.list_top_level_node_ids()[0]
     operations = [
         {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 1}},
-        {"op": "remove", "node_id": 99999},  # bad: nonexistent node
+        {"op": "remove", "node_id": "99999"},  # bad: nonexistent node
         {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 2}},
     ]
     new_tree, outcomes = apply_change_set_to_tree_with_per_op_isolation(tree, operations)
@@ -59,6 +59,6 @@ def test_input_tree_is_not_mutated_by_isolation_apply():
     snapshot_before = copy.deepcopy(tree.to_json_dict())
     apply_change_set_to_tree_with_per_op_isolation(tree, [
         {"op": "add_top_level", "raw_input_reference": {"raw_input_id": 9}},
-        {"op": "remove", "node_id": 99999},
+        {"op": "remove", "node_id": "99999"},
     ])
     assert tree.to_json_dict() == snapshot_before

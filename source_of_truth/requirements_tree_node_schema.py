@@ -28,14 +28,29 @@ class RawInputReference:
         )
 
 
+TOP_LEVEL_PARENT_SENTINEL: str = "0"
+
+
+def _coerce_node_id_to_string(raw_value: Any) -> str:
+    """Legacy ints become "1", "2"; new string ids ("a", "12", "aa") pass through."""
+    return str(raw_value)
+
+
+def _coerce_parent_id_to_string_with_top_level_sentinel(raw_value: Any) -> str:
+    """null/None/0/"0" all collapse to TOP_LEVEL_PARENT_SENTINEL ("0")."""
+    if raw_value is None or raw_value == 0 or raw_value == "0":
+        return TOP_LEVEL_PARENT_SENTINEL
+    return str(raw_value)
+
+
 @dataclass
 class RequirementsTreeNode:
-    node_id: int
-    parent_id: Optional[int]
-    kind: str  # QUOTE_REFERENCE_NODE_KIND or PROJECT_PATHS_SPECIAL_NODE_KIND
+    node_id: str
+    parent_id: str  # "0" sentinel = top-level
+    kind: str  # QUOTE_REFERENCE_NODE_KIND, PROJECT_PATHS_SPECIAL_NODE_KIND, or GROUP_NODE_KIND
     raw_input_reference: Optional[RawInputReference] = None  # required if kind=quote_reference
     project_paths: list[str] = field(default_factory=list)    # only for project_paths node
-    child_node_ids: list[int] = field(default_factory=list)
+    child_node_ids: list[str] = field(default_factory=list)
     short_neutral_title: str = ""  # required for new add ops; legacy nodes load with ""
 
     def to_json_dict(self) -> dict[str, Any]:
@@ -55,8 +70,8 @@ class RequirementsTreeNode:
     @classmethod
     def from_json_dict(cls, raw: dict[str, Any]) -> "RequirementsTreeNode":
         return cls(
-            node_id=raw["node_id"],
-            parent_id=raw.get("parent_id"),
+            node_id=_coerce_node_id_to_string(raw["node_id"]),
+            parent_id=_coerce_parent_id_to_string_with_top_level_sentinel(raw.get("parent_id")),
             kind=raw["kind"],
             raw_input_reference=(
                 RawInputReference.from_json_dict(raw["raw_input_reference"])
@@ -64,7 +79,7 @@ class RequirementsTreeNode:
                 else None
             ),
             project_paths=list(raw.get("project_paths", [])),
-            child_node_ids=list(raw.get("child_node_ids", [])),
+            child_node_ids=[_coerce_node_id_to_string(c) for c in raw.get("child_node_ids", [])],
             short_neutral_title=raw.get("short_neutral_title", ""),
         )
 
@@ -72,9 +87,8 @@ class RequirementsTreeNode:
 @dataclass
 class RequirementsTree:
     project_id: str
-    next_node_id: int
-    nodes_by_id: dict[int, RequirementsTreeNode] = field(default_factory=dict)
-    top_level_node_ids: list[int] = field(default_factory=list)
+    next_node_id: int  # counter for assigning quote-leaf node ids (1, 2, 3 ...) — stored as str on the node
+    nodes_by_id: dict[str, RequirementsTreeNode] = field(default_factory=dict)
     next_group_letter_index: int = 0  # counter for assigning group node letter ids (a, b, ..., aa, ...)
 
     def to_json_dict(self) -> dict[str, Any]:
@@ -82,19 +96,19 @@ class RequirementsTree:
             "project_id": self.project_id,
             "next_node_id": self.next_node_id,
             "next_group_letter_index": self.next_group_letter_index,
-            "top_level_node_ids": list(self.top_level_node_ids),
-            "nodes_by_id": {str(nid): n.to_json_dict() for nid, n in self.nodes_by_id.items()},
+            "nodes_by_id": {nid: n.to_json_dict() for nid, n in self.nodes_by_id.items()},
         }
 
     @classmethod
     def from_json_dict(cls, raw: dict[str, Any]) -> "RequirementsTree":
+        # top_level_node_ids was a stored field in the legacy schema; now derived,
+        # so we ignore the field if present in legacy on-disk data.
         return cls(
             project_id=raw["project_id"],
             next_node_id=raw["next_node_id"],
             next_group_letter_index=raw.get("next_group_letter_index", 0),
-            top_level_node_ids=list(raw.get("top_level_node_ids", [])),
             nodes_by_id={
-                int(nid): RequirementsTreeNode.from_json_dict(n)
+                _coerce_node_id_to_string(nid): RequirementsTreeNode.from_json_dict(n)
                 for nid, n in raw.get("nodes_by_id", {}).items()
             },
         )
@@ -102,6 +116,10 @@ class RequirementsTree:
     @classmethod
     def empty_for_project(cls, project_id: str) -> "RequirementsTree":
         return cls(project_id=project_id, next_node_id=1)
+
+    def list_top_level_node_ids(self) -> list[str]:
+        """Derived: nodes whose parent_id is the top-level sentinel '0'."""
+        return [n.node_id for n in self.nodes_by_id.values() if n.parent_id == TOP_LEVEL_PARENT_SENTINEL]
 
 
 def letter_id_for_index(zero_based_index: int) -> str:

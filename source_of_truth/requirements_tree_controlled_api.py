@@ -47,6 +47,7 @@ from .requirements_tree_change_set_applier import (
 from .requirements_tree_change_set_schema import RequirementsTreeChangeSet
 from .requirements_tree_node_schema import (
     PROJECT_PATHS_SPECIAL_NODE_KIND,
+    TOP_LEVEL_PARENT_SENTINEL,
     RequirementsTree,
     RequirementsTreeNode,
 )
@@ -78,10 +79,10 @@ class RequirementsTreeControlledApi:
         return build_top_level_injection_text_for_project(self._project_id)
 
     def get_node_by_id(
-        self, node_id: int, include_children: bool = True
+        self, node_id, include_children: bool = True
     ) -> Optional[dict[str, Any]]:
         tree = load_requirements_tree(self._project_id)
-        node = tree.nodes_by_id.get(node_id)
+        node = tree.nodes_by_id.get(str(node_id))
         if node is None:
             return None
         result: dict[str, Any] = {
@@ -407,7 +408,7 @@ class RequirementsTreeControlledApi:
     def _find_project_paths_node_or_none(
         self, tree: RequirementsTree
     ) -> Optional[RequirementsTreeNode]:
-        for node_id in tree.top_level_node_ids:
+        for node_id in tree.list_top_level_node_ids():
             node = tree.nodes_by_id.get(node_id)
             if node is not None and node.kind == PROJECT_PATHS_SPECIAL_NODE_KIND:
                 return node
@@ -419,13 +420,13 @@ class RequirementsTreeControlledApi:
         existing = self._find_project_paths_node_or_none(tree)
         if existing is not None:
             return existing
-        new_node_id = tree.next_node_id
+        new_node_id_string = str(tree.next_node_id)
         tree.next_node_id += 1
         new_node = RequirementsTreeNode(
-            node_id=new_node_id,
-            parent_id=None,
+            node_id=new_node_id_string,
+            parent_id=TOP_LEVEL_PARENT_SENTINEL,
             kind=PROJECT_PATHS_SPECIAL_NODE_KIND,
+            short_neutral_title="project paths",
         )
-        tree.nodes_by_id[new_node_id] = new_node
-        tree.top_level_node_ids.append(new_node_id)
+        tree.nodes_by_id[new_node_id_string] = new_node
         return new_node

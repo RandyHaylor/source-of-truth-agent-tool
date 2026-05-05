@@ -70,14 +70,15 @@ def render_tree_compact(
     max_quote_chars: int = 240,
 ) -> str:
     """Compact indented listing; top `max_inlined_depth` levels inline quote text."""
-    if not tree.top_level_node_ids:
+    top_level_node_ids = tree.list_top_level_node_ids()
+    if not top_level_node_ids:
         return f"(project {project_id}: 0 nodes)"
     output_lines: list[str] = [
         f"project {project_id}: {len(tree.nodes_by_id)} nodes, "
-        f"{len(tree.top_level_node_ids)} top-level"
+        f"{len(top_level_node_ids)} top-level"
     ]
 
-    def _walk(node_id: int, depth: int) -> None:
+    def _walk(node_id: str, depth: int) -> None:
         node = tree.nodes_by_id.get(node_id)
         if node is None:
             output_lines.append("  " * depth + f"[{node_id}] (missing)")
@@ -88,6 +89,6 @@ def render_tree_compact(
         for child_id in node.child_node_ids:
             _walk(child_id, depth + 1)
 
-    for top_id in tree.top_level_node_ids:
+    for top_id in top_level_node_ids:
         _walk(top_id, 0)
     return "\n".join(output_lines)
