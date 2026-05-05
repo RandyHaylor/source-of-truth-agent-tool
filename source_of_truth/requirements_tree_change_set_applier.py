@@ -36,6 +36,35 @@ class ChangeSetApplicationError(ValueError):
 SHORT_NEUTRAL_TITLE_MAX_CHARS: int = 50
 
 
+# Per-op-kind whitelist of recognized field names. Anything else on the op dict
+# is rejected at apply time so the submitting agent sees an explicit error
+# instead of having silently-dropped fields deceive it into thinking the data
+# was stored.
+_RECOGNIZED_FIELD_NAMES_BY_OP_KIND: dict[str, set[str]] = {
+    "add":              {"op", "parent_id", "raw_input_reference", "short_neutral_title"},
+    "add_group":        {"op", "parent_id", "short_neutral_title"},
+    "reparent":         {"op", "node_id", "new_parent_id"},
+    "remove":           {"op", "node_id"},
+    "modify_reference": {"op", "node_id", "raw_input_reference"},
+    "reorder_children": {"op", "parent_id", "child_order"},
+}
+
+
+def _reject_unknown_fields_on_op_or_raise(operation: dict, op_kind: str) -> None:
+    recognized_fields = _RECOGNIZED_FIELD_NAMES_BY_OP_KIND.get(op_kind)
+    if recognized_fields is None:
+        return  # unknown op kind handled later by the dispatch
+    unknown_field_names_on_this_op = sorted(set(operation.keys()) - recognized_fields)
+    if unknown_field_names_on_this_op:
+        recognized_sorted = sorted(recognized_fields)
+        raise ChangeSetApplicationError(
+            f"{op_kind!r} op has unknown field(s) {unknown_field_names_on_this_op}; "
+            f"recognized fields are {recognized_sorted}. "
+            f"Unknown fields would be silently dropped, so the op is rejected to avoid "
+            f"deceiving the submitter that the data was stored."
+        )
+
+
 def _validate_short_neutral_title_or_raise(title_value: Any, op_label_for_error_message: str) -> str:
     if not isinstance(title_value, str) or len(title_value) == 0:
         raise ChangeSetApplicationError(
@@ -81,6 +110,7 @@ def apply_change_set_to_tree(
 
     for operation in change_set_operations:
         op_kind = operation["op"]
+        _reject_unknown_fields_on_op_or_raise(operation, op_kind)
 
         if op_kind == OPERATION_KIND_ADD:
             requested_parent_id = _require_explicit_parent_id_string_or_raise(operation, "add op")
