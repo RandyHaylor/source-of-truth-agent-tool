@@ -166,17 +166,124 @@ def _handle_set_mode(argv: list[str]) -> int:
 
 # ----- Runtime verbs (agent-facing) -----
 
-def _resolve_change_set_payload_from_argv_after_project_id(
-    payload_args: list[str], stdin_text_supplier=None
-) -> dict:
-    """Three input modes for submit-change-set:
-       - @path/to/file.json                 -> read file
-       - -                                  -> read JSON from stdin
-       - <raw json>                         -> parse argv[0] as JSON
+def _extract_named_flag_value_from_argv_or_none(
+    argv: list[str], flag_name: str
+) -> "str | None":
+    """If `--flag value` appears in argv, return the value; else None."""
+    for index, token in enumerate(argv):
+        if token == flag_name and index + 1 < len(argv):
+            return argv[index + 1]
+    return None
 
-    The convenience flag forms (--add / --add-group / --new-group combo) are
-    introduced in T9; until then the JSON form is the only path.
+
+def _build_combo_or_leaf_or_group_shortcut_payload(
+    payload_args: list[str], project_id_for_combo_letter_lookup: "str | None"
+) -> dict:
+    """Convenience shortcut forms for one- or two-op change-sets.
+
+    Listed in promotion order (combo first to encourage group creation):
+    1. --add <raw_input_id> --parent <pid> --title "<leaf>" --new-group "<group>"
+       (creates group under parent, then leaf under the new group; 2 ops)
+    2. --add <raw_input_id> --parent <pid> --title "<leaf>"   (1 op)
+    3. --add-group --parent <pid> --title "<group>"           (1 op)
     """
+    has_add_flag = "--add" in payload_args
+    has_add_group_flag = "--add-group" in payload_args
+    if not (has_add_flag or has_add_group_flag):
+        return {}
+
+    explicit_parent_id_string = _extract_named_flag_value_from_argv_or_none(payload_args, "--parent")
+    explicit_short_neutral_title = _extract_named_flag_value_from_argv_or_none(payload_args, "--title")
+    new_group_short_neutral_title = _extract_named_flag_value_from_argv_or_none(payload_args, "--new-group")
+
+    if has_add_flag:
+        try:
+            add_flag_index = payload_args.index("--add")
+            raw_input_id_string = payload_args[add_flag_index + 1]
+            raw_input_id_int = int(raw_input_id_string)
+        except (IndexError, ValueError) as exc:
+            raise ValueError(f"--add requires an integer raw_input_id immediately after it: {exc}") from exc
+        if explicit_parent_id_string is None:
+            raise ValueError("--add requires --parent <node_id_or_'0'>")
+        if explicit_short_neutral_title is None:
+            raise ValueError("--add requires --title \"<short_neutral_title>\"")
+
+        # Combo form: also create a new group under the requested parent, and
+        # attach the leaf under that new group. The new group's letter id is
+        # predicted by reading the current tree's next_group_letter_index.
+        if new_group_short_neutral_title is not None:
+            from .requirements_tree_node_schema import letter_id_for_index
+            from .requirements_tree_store import load_requirements_tree
+            if project_id_for_combo_letter_lookup is None:
+                # Test path with no project_id supplied: fall back to "a".
+                predicted_new_group_letter_id = "a"
+            else:
+                tree = load_requirements_tree(project_id_for_combo_letter_lookup)
+                predicted_new_group_letter_id = letter_id_for_index(tree.next_group_letter_index)
+            return {
+                "submitter_rationale": "combo: new group + leaf under it",
+                "operations": [
+                    {
+                        "op": "add_group",
+                        "parent_id": explicit_parent_id_string,
+                        "short_neutral_title": new_group_short_neutral_title,
+                    },
+                    {
+                        "op": "add",
+                        "parent_id": predicted_new_group_letter_id,
+                        "raw_input_reference": {"raw_input_id": raw_input_id_int},
+                        "short_neutral_title": explicit_short_neutral_title,
+                    },
+                ],
+            }
+
+        # Leaf-only form.
+        return {
+            "submitter_rationale": f"add leaf under parent_id={explicit_parent_id_string}",
+            "operations": [{
+                "op": "add",
+                "parent_id": explicit_parent_id_string,
+                "raw_input_reference": {"raw_input_id": raw_input_id_int},
+                "short_neutral_title": explicit_short_neutral_title,
+            }],
+        }
+
+    # has_add_group_flag (no --add)
+    if explicit_parent_id_string is None:
+        raise ValueError("--add-group requires --parent <node_id_or_'0'>")
+    if explicit_short_neutral_title is None:
+        raise ValueError("--add-group requires --title \"<short_neutral_title>\"")
+    return {
+        "submitter_rationale": f"add group under parent_id={explicit_parent_id_string}",
+        "operations": [{
+            "op": "add_group",
+            "parent_id": explicit_parent_id_string,
+            "short_neutral_title": explicit_short_neutral_title,
+        }],
+    }
+
+
+def _resolve_change_set_payload_from_argv_after_project_id(
+    payload_args: list[str],
+    stdin_text_supplier=None,
+    project_id_for_combo_letter_lookup: "str | None" = None,
+) -> dict:
+    """Convenience-flag shortcuts (combo first) + JSON forms.
+
+    Convenience-flag shortcuts (combo listed first to encourage tree organization):
+      1. --add <rid> --parent <pid> --title "<leaf>" --new-group "<group title>"
+      2. --add <rid> --parent <pid> --title "<leaf title>"
+      3. --add-group --parent <pid> --title "<group title>"
+
+    JSON forms:
+      - @path/to/file.json                 -> read file
+      - -                                  -> read JSON from stdin
+      - <raw json>                         -> parse argv[0] as JSON
+    """
+    if "--add" in payload_args or "--add-group" in payload_args:
+        return _build_combo_or_leaf_or_group_shortcut_payload(
+            payload_args, project_id_for_combo_letter_lookup
+        )
     if len(payload_args) == 1 and payload_args[0] == "-":
         if stdin_text_supplier is None:
             stdin_text = sys.stdin.read()
@@ -190,6 +297,7 @@ def _resolve_change_set_payload_from_argv_after_project_id(
         return json.loads(payload_args[0])
     raise ValueError(
         "submit-change-set payload must be one of: "
+        "convenience flags (--add / --add-group / --new-group) | "
         "@path/to/file.json | - (stdin) | <raw json>"
     )
 
@@ -197,14 +305,20 @@ def _resolve_change_set_payload_from_argv_after_project_id(
 def _handle_submit_change_set(argv: list[str]) -> int:
     if len(argv) < 2:
         print(
-            "Usage: source-of-truth submit-change-set <project_id> [@path/to/file.json | - (stdin) | <raw json>]",
+            "Usage: source-of-truth submit-change-set <project_id> "
+            "[--add <rid> --parent <pid> --title \"...\" --new-group \"...\" "
+            "| --add <rid> --parent <pid> --title \"...\" "
+            "| --add-group --parent <pid> --title \"...\" "
+            "| @path/to/file.json | - (stdin) | <raw json>]",
             file=sys.stderr,
         )
         return 2
     project_id = argv[0]
     payload_args = argv[1:]
     try:
-        change_set_dict = _resolve_change_set_payload_from_argv_after_project_id(payload_args)
+        change_set_dict = _resolve_change_set_payload_from_argv_after_project_id(
+            payload_args, project_id_for_combo_letter_lookup=project_id,
+        )
     except (ValueError, json.JSONDecodeError, OSError) as exc:
         print(f"Could not build change-set payload: {exc}", file=sys.stderr)
         return 2
