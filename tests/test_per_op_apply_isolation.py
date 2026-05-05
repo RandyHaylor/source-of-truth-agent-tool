@@ -26,11 +26,13 @@ def test_isolation_applies_good_ops_and_skips_only_the_bad_one():
         {"op": "add", "parent_id": "0", "raw_input_reference": {"raw_input_id": 2}, "short_neutral_title": "n2"},
     ]
     new_tree, outcomes = apply_change_set_to_tree_with_per_op_isolation(tree, operations)
-    assert outcomes[0] == {"operation_index": 0, "applied": True}
+    assert outcomes[0]["operation_index"] == 0
+    assert outcomes[0]["applied"] is True
     assert outcomes[1]["applied"] is False
     assert outcomes[1]["operation_index"] == 1
     assert "99999" in outcomes[1]["error"]
-    assert outcomes[2] == {"operation_index": 2, "applied": True}
+    assert outcomes[2]["operation_index"] == 2
+    assert outcomes[2]["applied"] is True
     # Tree should have the original 1 node + 2 newly added top-level = 3 total.
     assert len(new_tree.nodes_by_id) == 3
 

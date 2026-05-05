@@ -221,22 +221,41 @@ def apply_change_set_to_tree_with_per_op_isolation(
     """Apply each op individually; skip failures; return (final_tree, per_op_outcomes).
 
     Each entry in per_op_outcomes is a dict with keys:
-      - "operation_index": position in the input list
-      - "applied":         True if the op was applied, False if skipped
-      - "error":           the ChangeSetApplicationError message (only present if not applied)
+      - "operation_index":         position in the input list
+      - "applied":                 True if the op was applied, False if skipped
+      - "error":                   ChangeSetApplicationError message (only present if not applied)
+      - "assigned_node_id":        for add/add_group ops only: the newly-allocated id
+      - "assigned_node_parent_id": for add/add_group ops only: the parent of the new node
+      - "assigned_node_title":     for add/add_group ops only: the persisted short_neutral_title
     """
     running_tree = RequirementsTree.from_json_dict(
         copy.deepcopy(current_tree.to_json_dict())
     )
     per_op_outcomes: list[dict[str, Any]] = []
     for op_index, single_operation in enumerate(change_set_operations):
+        node_ids_before_this_op: set[str] = set(running_tree.nodes_by_id.keys())
         try:
             running_tree = apply_change_set_to_tree(running_tree, [single_operation])
-            per_op_outcomes.append({"operation_index": op_index, "applied": True})
         except ChangeSetApplicationError as exc:
             per_op_outcomes.append({
                 "operation_index": op_index,
                 "applied": False,
                 "error": str(exc),
             })
+            continue
+        outcome: dict[str, Any] = {"operation_index": op_index, "applied": True}
+        # If this op created a node, surface the assigned id + parent + title so
+        # the submitter learns immediately what id was minted.
+        op_kind = single_operation.get("op")
+        if op_kind in ("add", "add_group"):
+            newly_created_node_ids = (
+                set(running_tree.nodes_by_id.keys()) - node_ids_before_this_op
+            )
+            if len(newly_created_node_ids) == 1:
+                newly_created_node_id = next(iter(newly_created_node_ids))
+                new_node = running_tree.nodes_by_id[newly_created_node_id]
+                outcome["assigned_node_id"] = new_node.node_id
+                outcome["assigned_node_parent_id"] = new_node.parent_id
+                outcome["assigned_node_title"] = new_node.short_neutral_title
+        per_op_outcomes.append(outcome)
     return running_tree, per_op_outcomes

@@ -327,6 +327,7 @@ def _handle_submit_change_set(argv: list[str]) -> int:
     print(json.dumps({
         "approved": result.approved,
         "applied_operation_count": result.applied_operation_count,
+        "assigned_node_ids": result.assigned_node_ids,
         "reviewer_message": result.reviewer_message,
         "message_for_raw_input_sender": result.message_for_raw_input_sender,
         "reviewer_thinking_log_path": result.reviewer_thinking_log_path,

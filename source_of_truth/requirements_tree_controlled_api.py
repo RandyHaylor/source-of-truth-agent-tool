@@ -66,6 +66,29 @@ class ChangeSetSubmissionResult:
     message_for_raw_input_sender: str = ""
     reviewer_thinking_log_path: str = ""
     agent_guidance: str = INTERACTION_TIME_AGENT_GUIDANCE
+    # Compact "<parent_id>><assigned_id>: <title>" lines, one per add/add_group op
+    # that successfully created a node. Empty for change-sets with no creation ops.
+    assigned_node_ids: list[str] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.assigned_node_ids is None:
+            self.assigned_node_ids = []
+
+
+def _format_assigned_node_lines_from_per_op_outcomes(
+    per_op_outcomes: list[dict[str, Any]],
+) -> list[str]:
+    formatted_lines: list[str] = []
+    for outcome in per_op_outcomes:
+        if not outcome.get("applied"):
+            continue
+        if outcome.get("assigned_node_id") is None:
+            continue
+        formatted_lines.append(
+            f"{outcome['assigned_node_parent_id']}>"
+            f"{outcome['assigned_node_id']}: {outcome['assigned_node_title']}"
+        )
+    return formatted_lines
 
 
 class RequirementsTreeControlledApi:
@@ -218,12 +241,16 @@ class RequirementsTreeControlledApi:
         # one failed and why.
         apply_failure_summary_text = ""
         applied_operation_count_after_isolation = 0
+        assigned_node_lines_for_live_path: list[str] = []
         if approved_operations_in_original_order:
             current_tree = load_requirements_tree(self._project_id)
             new_tree, per_op_outcomes = apply_change_set_to_tree_with_per_op_isolation(
                 current_tree, approved_operations_in_original_order
             )
             save_requirements_tree_atomically(new_tree)
+            assigned_node_lines_for_live_path = _format_assigned_node_lines_from_per_op_outcomes(
+                per_op_outcomes
+            )
             applied_operation_count_after_isolation = sum(
                 1 for outcome in per_op_outcomes if outcome["applied"]
             )
@@ -256,6 +283,7 @@ class RequirementsTreeControlledApi:
             applied_operation_count=applied_operation_count_after_isolation,
             message_for_raw_input_sender=f"[source-of-truth] {outcome_message}",
             reviewer_thinking_log_path=thinking_log_path,
+            assigned_node_ids=assigned_node_lines_for_live_path,
         )
 
     def flush_deferred_change_sets_for_review(self) -> ChangeSetSubmissionResult:
@@ -320,12 +348,16 @@ class RequirementsTreeControlledApi:
 
         applied_operation_count_for_flush = 0
         apply_failure_summary_text_for_flush = ""
+        assigned_node_lines_for_flush_path: list[str] = []
         if approved_operations_for_flush:
             current_tree = load_requirements_tree(self._project_id)
             new_tree, per_op_outcomes_for_flush = apply_change_set_to_tree_with_per_op_isolation(
                 current_tree, approved_operations_for_flush
             )
             save_requirements_tree_atomically(new_tree)
+            assigned_node_lines_for_flush_path = _format_assigned_node_lines_from_per_op_outcomes(
+                per_op_outcomes_for_flush
+            )
             applied_operation_count_for_flush = sum(
                 1 for outcome in per_op_outcomes_for_flush if outcome["applied"]
             )
@@ -360,6 +392,7 @@ class RequirementsTreeControlledApi:
             applied_operation_count=applied_operation_count_for_flush,
             message_for_raw_input_sender=f"[source-of-truth] {approval_message}",
             reviewer_thinking_log_path=thinking_log_path,
+            assigned_node_ids=assigned_node_lines_for_flush_path,
         )
 
     def _apply_change_set_directly_with_no_reviewer(
@@ -368,7 +401,14 @@ class RequirementsTreeControlledApi:
         operation_count = len(change_set.operations)
         try:
             current_tree = load_requirements_tree(self._project_id)
-            new_tree = apply_change_set_to_tree(current_tree, change_set.operations)
+            new_tree, per_op_outcomes_for_no_reviewer = apply_change_set_to_tree_with_per_op_isolation(
+                current_tree, change_set.operations
+            )
+            # In no-reviewer mode the contract is "all-or-nothing local application";
+            # if any op failed isolation we surface the first error.
+            failures = [o for o in per_op_outcomes_for_no_reviewer if not o["applied"]]
+            if failures:
+                raise ChangeSetApplicationError(failures[0]["error"])
             save_requirements_tree_atomically(new_tree)
         except ChangeSetApplicationError as exc:
             error_message = (
@@ -382,6 +422,9 @@ class RequirementsTreeControlledApi:
                 message_for_raw_input_sender=f"[source-of-truth] {error_message}",
                 reviewer_thinking_log_path=thinking_log_path,
             )
+        assigned_node_lines_for_no_reviewer = _format_assigned_node_lines_from_per_op_outcomes(
+            per_op_outcomes_for_no_reviewer
+        )
         approval_message = (
             f"{operation_count} op(s) APPLIED (no-reviewer mode — no human/AI review performed)."
         )
@@ -392,6 +435,7 @@ class RequirementsTreeControlledApi:
             applied_operation_count=operation_count,
             message_for_raw_input_sender=f"[source-of-truth] {approval_message}",
             reviewer_thinking_log_path=thinking_log_path,
+            assigned_node_ids=assigned_node_lines_for_no_reviewer,
         )
 
     def add_project_path(self, filesystem_path: str) -> bool:
