@@ -102,7 +102,7 @@ In the agent's response after the wizard completes, the agent should briefly sta
 - The active reviewer mode
 - Any pinned paths
 - That every prompt from now on is auto-logged
-- That the agent can call `submit_requirements_tree_change_set(...)` to add nodes referencing logged `raw_input_id`s
+- That the agent can capture nodes by running `source-of-truth submit-change-set <project_id> --add <raw_input_id> --parent <pid_or_letter> --title "<subject>"` (or the combo form with `--new-group "<group>"`); see SKILL.md for the full shortcut + JSON forms
 
 This grounds future turns: the agent now knows the project is live and can start using the API as the canonical capture mechanism.
 

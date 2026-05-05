@@ -86,8 +86,10 @@ api = RequirementsTreeControlledApi(project_id, ClaudeCodeAdapter(session_id))
 result = api.submit_requirements_tree_change_set({
     "submitter_rationale": "User just confirmed the haiku-default decision.",
     "operations": [
-        {"op": "add_top_level",
-         "raw_input_reference": {"raw_input_id": 41}},
+        {"op": "add",
+         "parent_id": "0",  # "0" = top-level; or a node_id like "12" or "a"
+         "raw_input_reference": {"raw_input_id": 41},
+         "short_neutral_title": "haiku default model"},
     ],
 })
 print(result.approved, result.reviewer_message)
@@ -112,13 +114,28 @@ Set via `reviewer_model_name` in `global-settings.json` or `reviewer_model_name_
 ## CLI verbs
 
 ```bash
-sot init-and-register <session_id> <conversation_path>      # one-shot project setup
-sot init-project       <project_id>                         # init only
-sot add-session        <project_id> <session_id> <conversation_path>
-sot add-path           <project_id> <filesystem_path>       # add to project-paths special node
-sot set-mode           <project_id> live|none|deferred
-sot show-top-level     <project_id>
-sot user-prompt-submit-hook                                 # consumed by the hook wrapper, not by you
+# Setup
+source-of-truth init-and-register <session_id> <conversation_path>
+source-of-truth init-project       <project_id>
+source-of-truth add-session        <project_id> <session_id> <conversation_path>
+source-of-truth add-path           <project_id> <filesystem_path>
+source-of-truth set-mode           <project_id> live|none|deferred
+
+# Runtime (agent-facing)
+source-of-truth show-tree          <project_id> [--show-all]
+source-of-truth read               <project_id> <node_id> [<node_id> ...]
+source-of-truth search-nodes       <project_id> <query>
+source-of-truth show-top-level     <project_id>
+source-of-truth flush-deferred     <project_id>
+
+# Submit a change-set (combo shortcut FIRST to encourage tree organization)
+source-of-truth submit-change-set <pid> --add <rid> --parent <pid_or_letter> --title "<leaf>" --new-group "<group title>"
+source-of-truth submit-change-set <pid> --add <rid> --parent <pid_or_letter> --title "<leaf title>"
+source-of-truth submit-change-set <pid> --add-group --parent <pid_or_letter> --title "<group title>"
+source-of-truth submit-change-set <pid> '<raw json>'  # or @file.json or - for stdin
+
+# Hooks (consumed by the harness, not by you)
+source-of-truth user-prompt-submit-hook
 ```
 
 By convention `project_id == initializing session_id` (what `init-and-register` does in one step). Any unique string works otherwise.
@@ -159,27 +176,42 @@ Removes `~/.claude/skills/source-of-truth-agent-tool/` and scrubs the matching h
 
 ## Change-set schema
 
+Node ids are strings throughout: quote-leaf ids are decimal-counter strings (`"1"`, `"2"`, …) and group ids are letter strings (`"a"`, `"b"`, …, `"aa"`, …). The string `"0"` is reserved as the top-level parent sentinel — any node whose `parent_id == "0"` is a root.
+
 ```json
 {
   "submitter_rationale": "free-text",
   "operations": [
-    {"op": "add",              "parent_id": 12, "raw_input_reference": {"raw_input_id": 23, "char_range": [120, 180]}},
-    {"op": "add_top_level",                       "raw_input_reference": {"raw_input_id": 7}},
-    {"op": "reparent",         "node_id": 23, "new_parent_id": 33},
-    {"op": "remove",           "node_id": 47},
-    {"op": "modify_reference", "node_id": 23, "raw_input_reference": {"raw_input_id": 11}},
-    {"op": "reorder_children", "parent_id": 12, "child_order": [4, 23, 9]}
+    {"op": "add",              "parent_id": "12", "raw_input_reference": {"raw_input_id": 23, "char_range": [120, 180]}, "short_neutral_title": "vendor placement"},
+    {"op": "add",              "parent_id": "0",  "raw_input_reference": {"raw_input_id": 7},  "short_neutral_title": "back end stack"},
+    {"op": "add_group",        "parent_id": "0",  "short_neutral_title": "vendor rules"},
+    {"op": "reparent",         "node_id": "23", "new_parent_id": "33"},
+    {"op": "remove",           "node_id": "47"},
+    {"op": "modify_reference", "node_id": "23", "raw_input_reference": {"raw_input_id": 11}},
+    {"op": "reorder_children", "parent_id": "12", "child_order": ["4", "23", "9"]}
   ]
 }
 ```
 
-`raw_input_id` is a per-project integer assigned at log time, starting at 0. Session and timestamp are stored on the entry as data but the reference is just the integer.
+Op rules:
+- **`add`** requires `parent_id` (use `"0"` for top-level), `raw_input_reference`, and `short_neutral_title` (1–50 chars, the SUBJECT of the requirement, not the spec).
+- **`add_group`** requires `parent_id` and `short_neutral_title`. The new group's letter id is auto-allocated (`a`, `b`, …, `aa`).
+- The reviewer may return `amended_short_title` per op when a title overreaches the cited slice; that amended title is persisted automatically (no rejection).
 
-`char_range` rules per spec:
-- **Forbidden** when the cited submission's length is at or under the threshold (500 chars). The whole entry is the citation.
-- **Allowed but optional** when the submission length is over the threshold.
-- When provided it's `[start, end]` inclusive character indices and must be at least 1 character long.
+`raw_input_id` is a per-project integer assigned at log time, starting at 0.
+
+`char_range` rules:
+- **Forbidden** when submission length ≤ 500 chars (cite the whole entry).
+- **Allowed but optional** above the threshold.
+- `[start, end]` inclusive, ≥ 1 char.
 
 ## Status
 
-68 unit tests passing. Live haiku reviewer round-trip verified end-to-end with single-op, two-op, and four-call sequential tests. Hooks installed and self-gating verified across registered/unregistered/missing-package/malformed-input cases. Tree on disk for the bootstrap project (`be2988e2-...`) holds 14 captured requirement nodes from the build of this tool itself.
+116 unit tests passing. Live haiku reviewer round-trip verified end-to-end with single-op, two-op, and four-call sequential tests. Hooks installed and self-gating verified across registered/unregistered/missing-package/malformed-input cases.
+
+Schema highlights as of the latest refactor:
+- Node ids are strings: `"1"`, `"2"`, … for quote leaves; `"a"`, `"b"`, …, `"aa"` for groups.
+- Every node carries `short_neutral_title` (1–50 chars, the subject not the spec).
+- `parent_id == "0"` is the top-level sentinel; agents must always pick a parent.
+- Group nodes (`add_group` op) organize the tree; the combo shortcut (`--new-group "<title>"`) creates a group + a leaf inside it in one change-set.
+- Reviewer can emit `amended_short_title` per op when a title overreaches; the amended title is persisted automatically.
