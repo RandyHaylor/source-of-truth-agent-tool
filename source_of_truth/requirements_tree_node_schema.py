@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 PROJECT_PATHS_SPECIAL_NODE_KIND: str = "project_paths"
 QUOTE_REFERENCE_NODE_KIND: str = "quote_reference"
+GROUP_NODE_KIND: str = "group"
 
 
 @dataclass
@@ -35,6 +36,7 @@ class RequirementsTreeNode:
     raw_input_reference: Optional[RawInputReference] = None  # required if kind=quote_reference
     project_paths: list[str] = field(default_factory=list)    # only for project_paths node
     child_node_ids: list[int] = field(default_factory=list)
+    short_neutral_title: str = ""  # required for new add ops; legacy nodes load with ""
 
     def to_json_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -42,6 +44,7 @@ class RequirementsTreeNode:
             "parent_id": self.parent_id,
             "kind": self.kind,
             "child_node_ids": list(self.child_node_ids),
+            "short_neutral_title": self.short_neutral_title,
         }
         if self.raw_input_reference is not None:
             out["raw_input_reference"] = self.raw_input_reference.to_json_dict()
@@ -62,6 +65,7 @@ class RequirementsTreeNode:
             ),
             project_paths=list(raw.get("project_paths", [])),
             child_node_ids=list(raw.get("child_node_ids", [])),
+            short_neutral_title=raw.get("short_neutral_title", ""),
         )
 
 
@@ -71,11 +75,13 @@ class RequirementsTree:
     next_node_id: int
     nodes_by_id: dict[int, RequirementsTreeNode] = field(default_factory=dict)
     top_level_node_ids: list[int] = field(default_factory=list)
+    next_group_letter_index: int = 0  # counter for assigning group node letter ids (a, b, ..., aa, ...)
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
             "project_id": self.project_id,
             "next_node_id": self.next_node_id,
+            "next_group_letter_index": self.next_group_letter_index,
             "top_level_node_ids": list(self.top_level_node_ids),
             "nodes_by_id": {str(nid): n.to_json_dict() for nid, n in self.nodes_by_id.items()},
         }
@@ -85,6 +91,7 @@ class RequirementsTree:
         return cls(
             project_id=raw["project_id"],
             next_node_id=raw["next_node_id"],
+            next_group_letter_index=raw.get("next_group_letter_index", 0),
             top_level_node_ids=list(raw.get("top_level_node_ids", [])),
             nodes_by_id={
                 int(nid): RequirementsTreeNode.from_json_dict(n)
@@ -97,6 +104,21 @@ class RequirementsTree:
         return cls(project_id=project_id, next_node_id=1)
 
 
+def letter_id_for_index(zero_based_index: int) -> str:
+    """0->'a', 25->'z', 26->'aa', 51->'az', 52->'ba', 701->'zz', 702->'aaa'.
+
+    Spreadsheet-style base-26 with NO zero digit (Excel-column style).
+    """
+    if zero_based_index < 0:
+        raise ValueError(f"zero_based_index must be >= 0; got {zero_based_index}")
+    one_based_remainder = zero_based_index + 1
+    letters_reversed: list[str] = []
+    while one_based_remainder > 0:
+        one_based_remainder, digit_zero_to_25 = divmod(one_based_remainder - 1, 26)
+        letters_reversed.append(chr(ord("a") + digit_zero_to_25))
+    return "".join(reversed(letters_reversed))
+
+
 REQUIREMENTS_TREE_NODE_JSON_SCHEMA: dict[str, Any] = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "RequirementsTreeNode",
@@ -105,7 +127,7 @@ REQUIREMENTS_TREE_NODE_JSON_SCHEMA: dict[str, Any] = {
     "properties": {
         "node_id": {"type": "integer", "minimum": 1},
         "parent_id": {"type": ["integer", "null"]},
-        "kind": {"enum": [QUOTE_REFERENCE_NODE_KIND, PROJECT_PATHS_SPECIAL_NODE_KIND]},
+        "kind": {"enum": [QUOTE_REFERENCE_NODE_KIND, PROJECT_PATHS_SPECIAL_NODE_KIND, GROUP_NODE_KIND]},
         "raw_input_reference": {
             "type": "object",
             "required": ["raw_input_id"],
@@ -121,5 +143,6 @@ REQUIREMENTS_TREE_NODE_JSON_SCHEMA: dict[str, Any] = {
         },
         "project_paths": {"type": "array", "items": {"type": "string"}},
         "child_node_ids": {"type": "array", "items": {"type": "integer"}},
+        "short_neutral_title": {"type": "string", "maxLength": 50},
     },
 }
