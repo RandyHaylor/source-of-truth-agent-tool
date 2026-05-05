@@ -19,9 +19,15 @@ MIN_CHAR_RANGE_LENGTH: int = 1
 
 INTERACTION_TIME_AGENT_GUIDANCE: str = (
     "[SoT guidance]\n"
+    "PREFER asking ISOLATED yes/no or short-list (A/B/C) questions whose answer is a single\n"
+    "word. The user's brief confirmation ('yes' / 'no' / 'A') becomes the cited slice while\n"
+    "the ~2000 chars of PRE-INPUT CONTEXT (your question, captured automatically) supplies\n"
+    "the actual requirement content. The reviewer explicitly supports this pattern --\n"
+    "do not paraphrase the question into the user's mouth.\n"
     "Capture patterns (each user ack = a new node):\n"
     "  - confirm TECH STACK / PLAN / HIGH-LEVEL STRUCTURE -> ack -> add nodes\n"
     "  - on your A/B/C question + user pick: char_range the letter; pre_text anchors meaning\n"
+    "  - on your yes/no question + user 'yes' or 'no': cite the whole short answer; pre_text carries the question\n"
     "  - user correction/feedback -> capture verbatim (top-level if cross-cutting)\n"
     "Batch related captures into ONE `source-of-truth submit-change-set` invocation.\n"
     "When you submit:\n"
