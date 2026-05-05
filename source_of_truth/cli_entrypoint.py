@@ -241,23 +241,38 @@ def _handle_show_tree(argv: list[str]) -> int:
     return 0
 
 
-def _handle_get_node(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("Usage: source-of-truth get-node <project_id> <node_id>", file=sys.stderr)
+def _handle_read(argv: list[str]) -> int:
+    """Read one or more nodes by id; mixed quote-leaf ids (e.g. "12") and group letter ids (e.g. "a")."""
+    if len(argv) < 2:
+        print(
+            "Usage: source-of-truth read <project_id> <node_id> [<node_id> ...]",
+            file=sys.stderr,
+        )
         return 2
-    project_id, node_id_str = argv
-    try:
-        node_id = int(node_id_str)
-    except ValueError:
-        print(f"node_id must be integer; got {node_id_str!r}", file=sys.stderr)
-        return 2
+    project_id = argv[0]
+    requested_node_ids = argv[1:]
     api = RequirementsTreeControlledApi(project_id, ClaudeCodeAdapter())
-    node_payload = api.get_node_by_id(node_id, include_children=True)
-    if node_payload is None:
-        print(json.dumps({"error": f"node_id {node_id} not found"}, indent=2))
-        return 1
-    print(json.dumps(node_payload, indent=2))
-    return 0
+    payload_per_node: list[dict] = []
+    any_id_failed = False
+    for requested_node_id_string in requested_node_ids:
+        node_payload = api.get_node_by_id(requested_node_id_string, include_children=True)
+        if node_payload is None:
+            payload_per_node.append({
+                "requested_node_id": requested_node_id_string,
+                "error": f"node_id {requested_node_id_string!r} not found",
+            })
+            any_id_failed = True
+        else:
+            node_payload["requested_node_id"] = requested_node_id_string
+            payload_per_node.append(node_payload)
+    print(json.dumps(payload_per_node, indent=2))
+    return 1 if any_id_failed else 0
+
+
+# Back-compat shim: keep _handle_get_node as an alias so any out-of-tree caller
+# (or mid-flight test) doesn't import-fail. The dispatch table below maps both
+# the old `get-node` verb and the new `read` verb to the same handler.
+_handle_get_node = _handle_read
 
 
 def _handle_search_nodes(argv: list[str]) -> int:
@@ -316,7 +331,8 @@ _VERB_DISPATCH_TABLE = {
     # runtime (agent-facing)
     "submit-change-set": _handle_submit_change_set,
     "show-tree": _handle_show_tree,
-    "get-node": _handle_get_node,
+    "read": _handle_read,
+    "get-node": _handle_read,  # legacy alias; remove in a future refactor
     "search-nodes": _handle_search_nodes,
     "flush-deferred": _handle_flush_deferred,
     "add-path": _handle_add_path,

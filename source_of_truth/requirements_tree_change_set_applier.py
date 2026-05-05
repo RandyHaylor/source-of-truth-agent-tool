@@ -10,6 +10,7 @@ from typing import Any
 
 from .requirements_tree_change_set_schema import (
     OPERATION_KIND_ADD,
+    OPERATION_KIND_ADD_GROUP,
     OPERATION_KIND_ADD_TOP_LEVEL,
     OPERATION_KIND_MODIFY_REFERENCE,
     OPERATION_KIND_REMOVE,
@@ -17,6 +18,7 @@ from .requirements_tree_change_set_schema import (
     OPERATION_KIND_REPARENT,
 )
 from .requirements_tree_node_schema import (
+    GROUP_NODE_KIND,
     QUOTE_REFERENCE_NODE_KIND,
     TOP_LEVEL_PARENT_SENTINEL,
     RawInputReference,
@@ -24,6 +26,7 @@ from .requirements_tree_node_schema import (
     RequirementsTreeNode,
     _coerce_node_id_to_string,
     _coerce_parent_id_to_string_with_top_level_sentinel,
+    letter_id_for_index,
 )
 
 
@@ -34,6 +37,12 @@ class ChangeSetApplicationError(ValueError):
 def _allocate_new_quote_leaf_node_id(tree: RequirementsTree) -> str:
     new_id_string = str(tree.next_node_id)
     tree.next_node_id += 1
+    return new_id_string
+
+
+def _allocate_new_group_letter_node_id(tree: RequirementsTree) -> str:
+    new_id_string = letter_id_for_index(tree.next_group_letter_index)
+    tree.next_group_letter_index += 1
     return new_id_string
 
 
@@ -86,6 +95,24 @@ def apply_change_set_to_tree(
                 ),
                 short_neutral_title=operation.get("short_neutral_title", ""),
             )
+
+        elif op_kind == OPERATION_KIND_ADD_GROUP:
+            requested_parent_id = _coerce_parent_id_to_string_with_top_level_sentinel(
+                operation.get("parent_id")
+            )
+            if requested_parent_id != TOP_LEVEL_PARENT_SENTINEL:
+                parent_node = _require_node(new_tree, requested_parent_id)
+            else:
+                parent_node = None
+            new_group_node_id = _allocate_new_group_letter_node_id(new_tree)
+            new_tree.nodes_by_id[new_group_node_id] = RequirementsTreeNode(
+                node_id=new_group_node_id,
+                parent_id=requested_parent_id,
+                kind=GROUP_NODE_KIND,
+                short_neutral_title=operation.get("short_neutral_title", ""),
+            )
+            if parent_node is not None:
+                parent_node.child_node_ids.append(new_group_node_id)
 
         elif op_kind == OPERATION_KIND_REPARENT:
             target_node_id = _coerce_node_id_to_string(operation["node_id"])
