@@ -102,14 +102,30 @@ def test_submit_change_set_short_form_applies_under_no_reviewer_mode(capsys):
     assert len(tree.nodes_by_id) == 1
 
 
-def test_show_tree_dumps_full_tree_json(capsys):
+def test_show_tree_renders_compact_listing_for_empty_tree(capsys):
     save_requirements_tree_atomically(RequirementsTree.empty_for_project("p-show"))
     rc = _handle_show_tree(["p-show"])
     captured = capsys.readouterr()
     assert rc == 0
-    parsed = json.loads(captured.out)
-    assert parsed["project_id"] == "p-show"
-    assert parsed["nodes_by_id"] == {}
+    assert "p-show" in captured.out
+    assert "0 nodes" in captured.out
+
+
+def test_show_tree_inlines_quote_text_for_top_level_nodes(capsys):
+    save_project_settings(ProjectSettings(
+        project_id="p-show2", reviewer_mode_override=REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
+    ))
+    log_result = append_submission_to_raw_input_log(
+        "p-show2", "session-x", "the actual requirement text the user typed", ""
+    )
+    _handle_submit_change_set(["p-show2", "--add-top-level", str(log_result["raw_input_id"])])
+    capsys.readouterr()
+    rc = _handle_show_tree(["p-show2"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "the actual requirement text the user typed" in captured.out
+    assert "[1]" in captured.out
+    assert "raw#" in captured.out
 
 
 def test_get_node_returns_node_payload_for_existing_id(capsys):

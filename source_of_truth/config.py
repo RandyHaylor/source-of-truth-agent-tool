@@ -40,7 +40,8 @@ INTERACTION_TIME_AGENT_GUIDANCE: str = (
 
 
 TOP_LEVEL_INJECTION_BLURB_TEMPLATE: str = (
-    "[SoT] top: {top_level_node_json}\n"
+    "[SoT] tree (top 2 levels show actual quote text; deeper shows id+kind):\n"
+    "{tree_compact_text}\n"
     "API (on PATH): `source-of-truth search-nodes <project_id> <q>` | "
     "`source-of-truth get-node <project_id> <node_id>` | "
     "`source-of-truth submit-change-set <project_id> "

@@ -234,8 +234,10 @@ def _handle_show_tree(argv: list[str]) -> int:
     if len(argv) != 1:
         print("Usage: source-of-truth show-tree <project_id>", file=sys.stderr)
         return 2
-    tree = load_requirements_tree(argv[0])
-    print(json.dumps(tree.to_json_dict(), indent=2, sort_keys=True))
+    project_id = argv[0]
+    tree = load_requirements_tree(project_id)
+    from .compact_tree_renderer import render_tree_compact
+    print(render_tree_compact(project_id, tree))
     return 0
 
 
