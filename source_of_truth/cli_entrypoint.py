@@ -335,13 +335,26 @@ def _handle_submit_change_set(argv: list[str]) -> int:
 
 
 def _handle_show_tree(argv: list[str]) -> int:
-    if len(argv) != 1:
-        print("Usage: source-of-truth show-tree <project_id>", file=sys.stderr)
+    if len(argv) < 1 or len(argv) > 2:
+        print(
+            "Usage: source-of-truth show-tree <project_id> [--show-all]",
+            file=sys.stderr,
+        )
         return 2
     project_id = argv[0]
+    show_all_flag_present = len(argv) == 2 and argv[1] == "--show-all"
+    if len(argv) == 2 and not show_all_flag_present:
+        print(
+            f"Unknown flag: {argv[1]!r}. Only --show-all is supported.",
+            file=sys.stderr,
+        )
+        return 2
     tree = load_requirements_tree(project_id)
-    from .compact_tree_renderer import render_tree_compact
-    print(render_tree_compact(project_id, tree))
+    from .compact_tree_renderer import render_tree_compact, render_tree_titles_only_indented
+    if show_all_flag_present:
+        print(render_tree_compact(project_id, tree))
+    else:
+        print(render_tree_titles_only_indented(project_id, tree))
     return 0
 
 

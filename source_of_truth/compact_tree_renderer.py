@@ -63,6 +63,39 @@ def _render_node_line(
     return f"{indent}[{node.node_id}] {node.kind}{children_label}"
 
 
+def render_tree_titles_only_indented(project_id: str, tree: RequirementsTree) -> str:
+    """Compact <id> <short_neutral_title> view, indented for hierarchy. No brackets, no quote text.
+
+    Default for show-tree and per-turn injection. Maximally scannable: each line is
+    "<node_id> <title>", indented by depth*2 spaces.
+    """
+    top_level_node_ids = tree.list_top_level_node_ids()
+    output_lines: list[str] = [
+        f"project {project_id}: {len(tree.nodes_by_id)} nodes, "
+        f"{len(top_level_node_ids)} top-level"
+    ]
+    if not top_level_node_ids:
+        return output_lines[0] + " (empty)"
+
+    def _walk(node_id: str, depth: int) -> None:
+        node = tree.nodes_by_id.get(node_id)
+        if node is None:
+            output_lines.append(("  " * depth) + f"{node_id} (missing)")
+            return
+        title_for_display = (
+            node.short_neutral_title
+            if node.short_neutral_title
+            else f"({node.kind})"
+        )
+        output_lines.append(("  " * depth) + f"{node.node_id} {title_for_display}")
+        for child_id in node.child_node_ids:
+            _walk(child_id, depth + 1)
+
+    for top_id in top_level_node_ids:
+        _walk(top_id, 0)
+    return "\n".join(output_lines)
+
+
 def render_tree_compact(
     project_id: str,
     tree: RequirementsTree,

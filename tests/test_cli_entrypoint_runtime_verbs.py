@@ -116,7 +116,7 @@ def test_show_tree_renders_compact_listing_for_empty_tree(capsys):
     assert "0 nodes" in captured.out
 
 
-def test_show_tree_inlines_quote_text_for_top_level_nodes(capsys):
+def test_show_tree_show_all_flag_inlines_quote_text_for_top_level_nodes(capsys):
     save_project_settings(ProjectSettings(
         project_id="p-show2", reviewer_mode_override=REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
     ))
@@ -125,7 +125,7 @@ def test_show_tree_inlines_quote_text_for_top_level_nodes(capsys):
     )
     _handle_submit_change_set(["p-show2", _build_one_op_top_level_leaf_change_set_json(log_result["raw_input_id"])])
     capsys.readouterr()
-    rc = _handle_show_tree(["p-show2"])
+    rc = _handle_show_tree(["p-show2", "--show-all"])
     captured = capsys.readouterr()
     assert rc == 0
     assert "the actual requirement text the user typed" in captured.out
