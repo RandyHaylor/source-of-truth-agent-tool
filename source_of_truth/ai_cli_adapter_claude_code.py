@@ -152,6 +152,8 @@ class ClaudeCodeReviewerSessionHandleViaResume(PersistentReviewerSessionHandle):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
         )
         # Write the full prompt to stdin and close so claude sees EOF and starts.
