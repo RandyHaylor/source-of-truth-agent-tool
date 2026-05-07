@@ -300,12 +300,15 @@ def write_path_stub_forwarding_to_skill_folder_wrapper(skill_folder_wrapper_path
     if platform.system() == "Windows":
         stub_filename = SOURCE_OF_TRUTH_WRAPPER_SCRIPT_NAME_WINDOWS
         template = WINDOWS_PATH_STUB_TEMPLATE
+        # cmd.exe does not honor single quotes; wrap with double quotes instead.
+        wrapper_quoted = '"' + skill_folder_wrapper_path.replace('"', '""') + '"'
     else:
         stub_filename = SOURCE_OF_TRUTH_WRAPPER_SCRIPT_NAME_POSIX
         template = POSIX_PATH_STUB_TEMPLATE
+        wrapper_quoted = repr(skill_folder_wrapper_path)
     stub_path = os.path.join(target_dir, stub_filename)
-    with open(stub_path, "w") as f:
-        f.write(template.format(skill_folder_wrapper_quoted=repr(skill_folder_wrapper_path)))
+    with open(stub_path, "w", encoding="utf-8") as f:
+        f.write(template.format(skill_folder_wrapper_quoted=wrapper_quoted))
     if platform.system() != "Windows":
         os.chmod(stub_path, 0o755)
     print(f"  wrote PATH stub -> {stub_path}")
