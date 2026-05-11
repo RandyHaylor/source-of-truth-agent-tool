@@ -461,17 +461,60 @@ _VERB_DISPATCH_TABLE = {
 }
 
 
+_VERB_ONE_LINER_DESCRIPTIONS = {
+    "user-prompt-submit-hook": "Internal: handle a UserPromptSubmit hook event (not for direct use).",
+    "init-project": "Create a new project tree (no session enrollment).",
+    "init-and-register": "Create a new project AND enroll the calling session as a member.",
+    "add-session": "Enroll an additional Claude Code session into an existing project.",
+    "set-mode": "Set reviewer mode for a session: live | none | deferred.",
+    "submit-change-set": "Submit one or more ops (add / add_group / reparent / etc.) to mutate the tree.",
+    "show-tree": "Print the project's requirement tree (titles by default; --show-all inlines quotes).",
+    "read": "Read one or more nodes by id (mixed leaf + group ok).",
+    "get-node": "Alias for `read` (kept for backwards compatibility).",
+    "search-nodes": "Search node titles + raw quotes by keyword.",
+    "flush-deferred": "Apply queued submits in deferred mode (no-op otherwise).",
+    "add-path": "Pin a filesystem path on a project's project-paths node.",
+    "show-top-level": "Print only the top-level group/leaf summary for a project.",
+}
+
+
+_TOP_LEVEL_HELP_TOKENS = {"--help", "-h", "help", "-?", "/?"}
+
+
+def _print_top_level_help() -> None:
+    """Write usage + per-verb blurbs to stdout."""
+    print("Usage: source-of-truth <verb> [args...]")
+    print()
+    print("Verbs:")
+    longest_verb_name_length = max(len(verb_name) for verb_name in _VERB_DISPATCH_TABLE)
+    for verb_name in _VERB_DISPATCH_TABLE:
+        blurb = _VERB_ONE_LINER_DESCRIPTIONS.get(verb_name, "")
+        print(f"  {verb_name.ljust(longest_verb_name_length)}  {blurb}")
+    print()
+    print("Top-level help: source-of-truth --help | -h | help")
+    print("Per-verb args are not yet self-documenting; see README.md / SKILL.md for details.")
+
+
 def _main() -> int:
     if len(sys.argv) < 2:
+        # Zero-arg invocation: keep prior behavior (compact stderr banner, exit 2).
+        # The proper way to learn the CLI is `source-of-truth --help`.
         print(
-            f"Usage: source-of-truth <verb> [...]\nVerbs: {', '.join(_VERB_DISPATCH_TABLE)}",
+            f"Usage: source-of-truth <verb> [...]\nVerbs: {', '.join(_VERB_DISPATCH_TABLE)}\n"
+            f"For descriptions, run: source-of-truth --help",
             file=sys.stderr,
         )
         return 2
     verb = sys.argv[1]
+    if verb in _TOP_LEVEL_HELP_TOKENS:
+        _print_top_level_help()
+        return 0
     handler = _VERB_DISPATCH_TABLE.get(verb)
     if handler is None:
-        print(f"Unknown verb: {verb}", file=sys.stderr)
+        print(
+            f"Unknown verb: {verb}\nRun `source-of-truth --help` for the verb list.",
+            file=sys.stderr,
+        )
         return 2
     return handler(sys.argv[2:])
 
