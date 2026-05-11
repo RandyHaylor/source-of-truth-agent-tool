@@ -427,7 +427,27 @@ def main():
     print("Step 6: initialize ~/.source-of-truth/ global settings")
     initialize_global_settings_file()
 
-    print("\nInstall complete.")
+    print()
+    print("=" * 60)
+    print("INSTALL COMPLETE")
+    print("=" * 60)
+    print("What was done:")
+    print(f"  - Skill files deployed to: {install_dir}")
+    print(f"  - Hook wrappers written (UserPromptSubmit + PostToolUse).")
+    print(f"  - settings.json updated at: {settings_path}")
+    print(f"  - `source-of-truth` PATH stub deployed.")
+    print(f"  - Global settings ensured at: ~/.source-of-truth/global-settings.json")
+    print()
+    print("What's next:")
+    print("  1. Start a NEW Claude Code session so the hooks load (existing")
+    print("     sessions read settings.json at startup and won't pick up the")
+    print("     new entries).")
+    print("  2. In the new session, register your project with:")
+    print("       source-of-truth init-and-register <session_id> <jsonl_path>")
+    print("     The SKILL will walk you through it -- ask the agent to start")
+    print("     the source-of-truth setup wizard.")
+    print("  3. To remove later, run uninstall.py from this repo. It only")
+    print("     removes hooks + PATH stub; the install folder stays put.")
 
 
 if __name__ == "__main__":
