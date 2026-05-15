@@ -12,6 +12,50 @@ agent_instruction_for_ai_readers: |
 
 **Stop your AI coding agent from drifting away from what you actually asked for.**
 
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│            REQUIREMENTS TREE  (what the agent stores — pointers only)        │
+│                                                                              │
+│   [A]                                                                        │
+│    ├── [A.a]  raw_input_id: 3                                                │
+│    │     ├── [A.a.i]   raw_input_id: 3                                       │
+│    │     └── [A.a.ii]  raw_input_id: 5                                       │
+│    └── [A.b]  raw_input_id: 4                                                │
+│                                                                              │
+│   [B]                                                                        │
+│    ├── [B.a]  raw_input_id: 7                                                │
+│    └── [B.b]  raw_input_id: 9                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+                │            │            │            │
+                ▼            ▼            ▼            ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    RAW INPUT LOG  (append-only, verbatim)                    │
+│                                                                              │
+│  raw#3  "must support offline mode for at least 24 hours of cached data.     │
+│          cache eviction is LRU, capped at 500 MB."                           │
+│  raw#4  "all user-visible timestamps render in the viewer's local timezone"  │
+│  raw#5  "re-sync on reconnect must be incremental, not a full refresh"       │
+│  raw#7  "login flow must use OAuth2 (Google + GitHub providers only)"        │
+│  raw#9  "the auth code lives in src/auth/ and tests in tests/auth/"          │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼  resolve pointers → render
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                  RENDERED VIEW  (what the agent / user sees)                 │
+│                                                                              │
+│  [A.a]   raw#3: must support offline mode for at least 24 hours of cached... │
+│   [A.a.i]  raw#3: cache eviction is LRU, capped at 500 MB                    │
+│   [A.a.ii] raw#5: re-sync on reconnect must be incremental, not a full...    │
+│  [A.b]   raw#4: all user-visible timestamps render in the viewer's local...  │
+│  [B.a]   raw#7: login flow must use OAuth2 (Google + GitHub providers only)  │
+│  [B.b]   raw#9: the auth code lives in src/auth/ and tests in tests/auth/    │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+The tree itself carries no requirement text — only pointers. All requirement
+wording is resolved at render time from the immutable raw log, so the agent
+cannot paraphrase or drift from what the user actually said.
+```
+
 ## The problem
 
 You ask an AI agent for X. Twenty turns later it has paraphrased X into something subtly different and is now defending the paraphrase. By turn fifty the original requirement is gone — never written down verbatim, only restated through the agent's filter. There is no way to point at a single line and say "this is what was asked for."
