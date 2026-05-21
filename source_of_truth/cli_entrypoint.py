@@ -143,7 +143,7 @@ def _handle_init_project(argv: list[str]) -> int:
         return 2
     project_id = argv[0]
     ensure_root_directories_exist()
-    save_requirements_tree_atomically(RequirementsTree.empty_for_project(project_id))
+    save_requirements_tree_atomically(RequirementsTree.scaffolded_for_new_project(project_id))
     print(f"initialized project_id={project_id}")
     return 0
 
@@ -164,7 +164,7 @@ def _handle_init_and_register(argv: list[str]) -> int:
     except SessionAlreadyInDifferentProjectError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    save_requirements_tree_atomically(RequirementsTree.empty_for_project(project_id))
+    save_requirements_tree_atomically(RequirementsTree.scaffolded_for_new_project(project_id))
     print(
         f"initialized project_id={project_id}; "
         f"session={'added' if was_added else 'already_present'}"

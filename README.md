@@ -53,7 +53,9 @@ agent_instruction_for_ai_readers: |
 
 The tree itself carries no requirement text — only pointers. All requirement
 wording is resolved at render time from the immutable raw log, so the agent
-cannot paraphrase or drift from what the user actually said.
+cannot paraphrase or drift from what the user actually said. Each raw-log entry
+also carries the agent's *preceding* output (auto-captured "pre-text"), so even a
+one-word reply like "yes" resolves to the full question/plan it answered.
 ```
 
 ## The problem
@@ -82,6 +84,22 @@ The result: the only path for a hallucinated requirement to enter the tree is th
 - **Streamed reviewer log.** Watch the reviewer's NDJSON event stream live in `reviewer_thinking.log` as it works.
 - **Cross-AI-CLI ready.** Claude Code is the first concrete adapter; the interface is small enough to plug another CLI under it.
 - **Self-gating global hooks.** Install once; hooks fire on every Claude Code session but silently no-op for any session not registered to a project.
+- **Terse replies still count.** The agent's prior turn is auto-captured as each entry's pre-text, so a bare "yes" / "option B" becomes a real, context-carrying requirement — no need to restate the question.
+- **Trimmable citations.** Per-node `pretext` selection narrows that captured context to specific lines (or drops it) without losing the audit trail.
+- **Per-project tuning.** Every global setting (reviewer model/mode, capture window, citation thresholds) is overridable per project with project→global fallback — no code edits.
+- **Non-destructive install.** Reinstalls move the old folder to a timestamped backup; nothing is ever deleted. One project per session is enforced.
+
+## What this unlocks together
+
+The pieces compound into something none delivers alone: **you can run an entire project on terse confirmations and still end with a drift-proof, quote-backed requirements ledger.**
+
+- The **verbatim raw log** + **auto pre-text capture** + the **reviewer gate** mean a one-word answer is captured *with the exact question/plan it answered*, cited (not paraphrased), and validated. Short, fast turns no longer cost you traceability.
+- **Per-node pre-text selection** then lets the agent trim that captured context to just the relevant lines after the fact — precision without re-typing, and the full original is still in the immutable log.
+- **Per-project overrides + settings-in-JSON** retune the same engine per project (how much context to capture, which reviewer, how strict citations are) with project→global fallback.
+- **Default-scaffolded subject groups** (`resources`, `user-interaction-preferences`, `technical-requirements`, `current-project-documentation`) give every new project a consistent logical skeleton to file into from turn one.
+- **Non-destructive install + self-gating hooks** make it safe to install once and leave on: unenrolled sessions no-op, reinstalls back up rather than delete.
+
+Net: terse to type, exhaustive to audit — every requirement traces to a real timestamped quote, with its surrounding context, that a second model signed off on.
 
 ## Quickstart
 
@@ -93,8 +111,9 @@ git clone git@github.com:RandyHaylor/source-of-truth-agent-tool.git
 cd source-of-truth-agent-tool
 
 # 2. Install. This copies the repo into ~/.claude/skills/source-of-truth-agent-tool/,
-#    writes the two hook wrapper scripts, patches ~/.claude/settings.json, and
-#    initializes ~/.source-of-truth/global-settings.json.
+#    writes the hook wrapper scripts (UserPromptSubmit / PostToolUse / Stop / etc.),
+#    patches ~/.claude/settings.json, and seeds ~/.source-of-truth/global-settings.json.
+#    Reinstall is non-destructive: an existing install dir is moved to a backup, never deleted.
 python3 install.py
 
 # 3. (Optional) Drop a small wrapper on PATH so you can run `sot <verb>` anywhere.
@@ -286,18 +305,22 @@ Op rules:
 
 `raw_input_id` is a per-project integer assigned at log time, starting at 0.
 
-`char_range` rules:
-- **Forbidden** when submission length ≤ 500 chars (cite the whole entry).
+`char_range` rules (the threshold is the per-project setting `char_range_allowed_above_threshold`, default **500**, overridable per project):
+- **Forbidden** when submission length ≤ threshold (cite the whole entry).
 - **Allowed but optional** above the threshold.
-- `[start, end]` inclusive, ≥ 1 char.
+- `[start, end]` inclusive, ≥ `min_char_range_length` chars (default 1).
+
+`pre_text_line_range` (optional, selects the entry's agent pre-text on a node): absent ⇒ whole pre-text, `[start, end]` ⇒ those 1-indexed lines, `"none"` ⇒ excluded. Set it with the `pretext` verb.
 
 ## Status
 
-116 unit tests passing. Live haiku reviewer round-trip verified end-to-end with single-op, two-op, and four-call sequential tests. Hooks installed and self-gating verified across registered/unregistered/missing-package/malformed-input cases.
+146 unit tests passing. Live haiku reviewer round-trip verified end-to-end with single-op, two-op, and four-call sequential tests. Hooks installed and self-gating verified across registered/unregistered/missing-package/malformed-input cases.
 
 Schema highlights as of the latest refactor:
 - Node ids are strings: `"1"`, `"2"`, … for quote leaves; `"a"`, `"b"`, …, `"aa"` for groups.
 - Every node carries `short_neutral_title` (1–50 chars, the subject not the spec).
 - `parent_id == "0"` is the top-level sentinel; agents must always pick a parent.
-- Group nodes (`add_group` op) organize the tree; the combo shortcut (`--new-group "<title>"`) creates a group + a leaf inside it in one change-set.
+- Group nodes (`add_group` op) organize the tree; the combo shortcut (`--new-group "<title>"`) creates a group + a leaf inside it in one change-set. New projects are pre-scaffolded with default top-level groups.
+- A node's citation can include the entry's agent pre-text (whole / line-range / `"none"`) via `pre_text_line_range`, set with the `pretext` verb.
+- All tunable settings live in JSON (`default-global-settings.json` overlaid by the live `global-settings.json`), each overridable per project.
 - Reviewer can emit `amended_short_title` per op when a title overreaches; the amended title is persisted automatically.

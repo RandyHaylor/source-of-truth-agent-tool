@@ -8,6 +8,15 @@ PROJECT_PATHS_SPECIAL_NODE_KIND: str = "project_paths"
 QUOTE_REFERENCE_NODE_KIND: str = "quote_reference"
 GROUP_NODE_KIND: str = "group"
 
+# Top-level group (text-less subject category) nodes seeded into every new
+# project so agents have a consistent place to file things from turn one.
+DEFAULT_PROJECT_SCAFFOLD_GROUP_TITLES: tuple[str, ...] = (
+    "resources",                       # links/paths/docs/chunks supplied by the user
+    "user-interaction-preferences",
+    "technical-requirements",
+    "current-project-documentation",
+)
+
 
 @dataclass
 class RawInputReference:
@@ -131,6 +140,23 @@ class RequirementsTree:
     @classmethod
     def empty_for_project(cls, project_id: str) -> "RequirementsTree":
         return cls(project_id=project_id, next_node_id=1)
+
+    @classmethod
+    def scaffolded_for_new_project(cls, project_id: str) -> "RequirementsTree":
+        """Empty tree pre-seeded with the default top-level group nodes
+        (DEFAULT_PROJECT_SCAFFOLD_GROUP_TITLES), so every new project starts with
+        consistent subject categories to file requirements under."""
+        tree = cls(project_id=project_id, next_node_id=1)
+        for group_title in DEFAULT_PROJECT_SCAFFOLD_GROUP_TITLES:
+            group_letter_id = letter_id_for_index(tree.next_group_letter_index)
+            tree.nodes_by_id[group_letter_id] = RequirementsTreeNode(
+                node_id=group_letter_id,
+                parent_id=TOP_LEVEL_PARENT_SENTINEL,
+                kind=GROUP_NODE_KIND,
+                short_neutral_title=group_title,
+            )
+            tree.next_group_letter_index += 1
+        return tree
 
     def list_top_level_node_ids(self) -> list[str]:
         """Derived: nodes whose parent_id is the top-level sentinel '0'."""

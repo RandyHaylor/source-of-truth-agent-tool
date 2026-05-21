@@ -39,7 +39,7 @@ Once the wizard finishes, the agent captures requirements via the on-PATH `sourc
 
 1. **Every node has a parent.** `parent_id` is required on every `add` op. Use `"0"` for top-level only when no appropriate parent exists. Prefer organizing under a group node (letter id like `a`, `b`, `aa`).
 2. **Every node has a title.** `short_neutral_title` is required, 1–50 chars, the SUBJECT of the requirement (not the spec). The reviewer will rewrite (via `amended_short_title`) if a title overreaches the cited slice; ops aren't rejected for that.
-3. **Group nodes organize the tree.** `add_group` op (or the combo shortcut) creates a group with auto-allocated letter id.
+3. **Group nodes organize the tree.** `add_group` op (or the combo shortcut) creates a group with auto-allocated letter id. New projects start **pre-scaffolded** with four top-level groups — `resources` (links/paths/docs the user supplies), `user-interaction-preferences`, `technical-requirements`, `current-project-documentation` — so file new nodes under the fitting one (add more groups as needed).
 
 Three convenience-flag shortcuts for `submit-change-set`, listed in promotion order:
 
