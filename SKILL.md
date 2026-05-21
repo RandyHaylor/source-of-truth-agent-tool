@@ -33,6 +33,8 @@ If at any point you find a missing prerequisite (install dir not present, settin
 
 **Pre-text is captured for you automatically.** A `Stop` hook records your previous turn's output (assistant text + tool-result summaries) and a `UserPromptSubmit` hook stores it as the next entry's `pre_submission_content`. So when you ask the user a question and they answer briefly (`yes`, `option B`), you can capture that short reply as a requirement node — the pre-text already carries the question/plan they were answering. You don't need to restate it.
 
+A new node includes the **whole** pre-text by default. When you `read` a node you'll see its pre-text line-numbered; if it's noisy, narrow it: `source-of-truth pretext <node_id> <start> <end>` (cite only those lines), `--all` (whole), or `--none` (drop it). No project id needed — it's resolved from your session.
+
 Once the wizard finishes, the agent captures requirements via the on-PATH `source-of-truth` wrapper. Three rules to remember:
 
 1. **Every node has a parent.** `parent_id` is required on every `add` op. Use `"0"` for top-level only when no appropriate parent exists. Prefer organizing under a group node (letter id like `a`, `b`, `aa`).

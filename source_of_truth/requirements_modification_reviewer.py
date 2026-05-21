@@ -123,11 +123,12 @@ def _build_inline_resolved_context_for_change_set(
             continue
         raw_input_id = ref["raw_input_id"]
         char_range = tuple(ref["char_range"]) if ref.get("char_range") else None
+        pre_text_line_range = ref.get("pre_text_line_range")
         try:
             entry = get_raw_log_entry_by_raw_input_id(project_id, raw_input_id)
             session_id = find_session_id_for_raw_input_id(project_id, raw_input_id)
             quoted_text = resolve_quote_text_from_reference(
-                project_id, raw_input_id, char_range
+                project_id, raw_input_id, char_range, pre_text_line_range
             )
         except (RawLogEntryNotFoundError, ValueError) as exc:
             inlined_blocks.append(

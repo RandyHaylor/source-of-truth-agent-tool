@@ -35,6 +35,30 @@ def validate_raw_input_reference(
     except RawLogEntryNotFoundError as exc:
         raise ReferenceValidationError(str(exc)) from exc
 
+    # Validate the optional agent pre-text selection (independent of char_range).
+    # None/"all" or "none" need no bounds; a [start,end] line range must be in range.
+    pre_text_line_range = raw_input_reference.get("pre_text_line_range")
+    if isinstance(pre_text_line_range, (list, tuple)):
+        if len(pre_text_line_range) != 2 or not all(isinstance(n, int) for n in pre_text_line_range):
+            raise ReferenceValidationError(
+                f"pre_text_line_range must be [start, end] integers; got {pre_text_line_range}"
+            )
+        start_line_number, end_line_number = pre_text_line_range
+        pre_text_line_count = len(entry.pre_submission_content.split("\n")) if entry.pre_submission_content else 0
+        if pre_text_line_count == 0:
+            raise ReferenceValidationError(
+                f"pre_text_line_range set but raw_input_id={raw_input_id} has no agent pre-text"
+            )
+        if start_line_number < 1 or end_line_number > pre_text_line_count or start_line_number > end_line_number:
+            raise ReferenceValidationError(
+                f"pre_text_line_range {list(pre_text_line_range)} out of bounds for "
+                f"pre-text with {pre_text_line_count} lines"
+            )
+    elif pre_text_line_range not in (None, "none"):
+        raise ReferenceValidationError(
+            f"pre_text_line_range must be null, \"none\", or [start, end]; got {pre_text_line_range!r}"
+        )
+
     submission_text_length = len(entry.submission_text)
 
     if char_range is None:

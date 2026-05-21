@@ -12,19 +12,34 @@ GROUP_NODE_KIND: str = "group"
 @dataclass
 class RawInputReference:
     raw_input_id: int
-    char_range: Optional[list[int]] = None  # [start, end] inclusive; only allowed above threshold
+    char_range: Optional[list[int]] = None  # [start, end] inclusive into submission_text; only above threshold
+    # Tri-state selection of the entry's agent pre-text (pre_submission_content):
+    #   None        -> the WHOLE pre-text (the default every new node starts with),
+    #   "none"      -> exclude the pre-text from this node,
+    #   [start,end] -> only these 1-indexed lines of the pre-text.
+    pre_text_line_range: Optional[object] = None
 
     def to_json_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"raw_input_id": self.raw_input_id}
         if self.char_range is not None:
             out["char_range"] = list(self.char_range)
+        if self.pre_text_line_range is not None:
+            out["pre_text_line_range"] = (
+                list(self.pre_text_line_range)
+                if isinstance(self.pre_text_line_range, (list, tuple))
+                else self.pre_text_line_range
+            )
         return out
 
     @classmethod
     def from_json_dict(cls, raw: dict[str, Any]) -> "RawInputReference":
+        raw_pre_text_line_range = raw.get("pre_text_line_range")
+        if isinstance(raw_pre_text_line_range, (list, tuple)):
+            raw_pre_text_line_range = list(raw_pre_text_line_range)
         return cls(
             raw_input_id=int(raw["raw_input_id"]),
             char_range=list(raw["char_range"]) if raw.get("char_range") is not None else None,
+            pre_text_line_range=raw_pre_text_line_range,
         )
 
 

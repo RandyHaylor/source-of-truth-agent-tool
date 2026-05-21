@@ -141,6 +141,7 @@ class RequirementsTreeControlledApi:
                     node.raw_input_reference.raw_input_id,
                     tuple(node.raw_input_reference.char_range)  # type: ignore[arg-type]
                     if node.raw_input_reference.char_range else None,
+                    node.raw_input_reference.pre_text_line_range,
                 )
             except Exception:
                 continue

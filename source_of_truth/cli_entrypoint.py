@@ -24,9 +24,13 @@ Hook entry-point:
 from __future__ import annotations
 
 import json
+import os
 import sys
 
-from .add_session_to_project_cli import add_session_to_project
+from .add_session_to_project_cli import (
+    SessionAlreadyInDifferentProjectError,
+    add_session_to_project,
+)
 from .ai_cli_adapter_claude_code import ClaudeCodeAdapter
 from .load_config import (
     ALL_VALID_REVIEWER_MODES,
@@ -124,7 +128,11 @@ def _handle_add_session(argv: list[str]) -> int:
         print("Usage: source-of-truth add-session <project_id> <session_id> <conversation_path>", file=sys.stderr)
         return 2
     project_id, session_id, conversation_path = argv
-    was_added = add_session_to_project(project_id, session_id, conversation_path)
+    try:
+        was_added = add_session_to_project(project_id, session_id, conversation_path)
+    except SessionAlreadyInDifferentProjectError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     print("added" if was_added else "already_present")
     return 0
 
@@ -151,8 +159,12 @@ def _handle_init_and_register(argv: list[str]) -> int:
     session_id, conversation_path = argv
     project_id = session_id
     ensure_root_directories_exist()
+    try:
+        was_added = add_session_to_project(project_id, session_id, conversation_path)
+    except SessionAlreadyInDifferentProjectError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     save_requirements_tree_atomically(RequirementsTree.empty_for_project(project_id))
-    was_added = add_session_to_project(project_id, session_id, conversation_path)
     print(
         f"initialized project_id={project_id}; "
         f"session={'added' if was_added else 'already_present'}"
@@ -377,6 +389,59 @@ def _handle_show_tree(argv: list[str]) -> int:
     return 0
 
 
+def _resolve_active_project_id_or_error(explicit_project_id: "str | None") -> "tuple[str | None, str | None]":
+    """Resolve which project a runtime verb operates on.
+
+    Project is implicit: derived from the current session via
+    CLAUDE_CODE_SESSION_ID -> resolve_project_id_for_session. An explicit id may
+    be passed (kept for portability to other agent platforms; omitted from help).
+    Returns (project_id, error_message); error_message is set when the session
+    is not enrolled in any project.
+    """
+    if explicit_project_id:
+        return explicit_project_id, None
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    project_id = resolve_project_id_for_session(session_id) if session_id else None
+    if project_id is None:
+        return None, (
+            "This session is not a member of a source-of-truth project. "
+            "Onboard it first (init-and-register, or add-session into an existing project)."
+        )
+    return project_id, None
+
+
+_PRETEXT_TOOL_REMINDER_LINE = (
+    "[pretext] Nodes above show their agent pre-text line-numbered. To narrow one: "
+    "`source-of-truth pretext <node_id> <start> <end>`  |  `--all` (whole)  |  `--none` (hide)."
+)
+
+
+def _attach_numbered_pre_text_to_node_payload(project_id: str, node_payload: dict) -> bool:
+    """Enrich a read payload with the entry's line-numbered agent pre-text and the
+    node's current selection. Returns True if the node is a quote reference."""
+    node_dict = node_payload.get("node", {})
+    reference = node_dict.get("raw_input_reference")
+    if not reference:
+        return False
+    from .raw_input_log_reader import get_raw_log_entry_by_raw_input_id, RawLogEntryNotFoundError
+    selection = reference.get("pre_text_line_range")
+    node_payload["pre_text_selection"] = "all" if selection is None else selection
+    try:
+        entry = get_raw_log_entry_by_raw_input_id(project_id, reference["raw_input_id"])
+    except (RawLogEntryNotFoundError, KeyError):
+        node_payload["agent_pre_text_numbered"] = "(entry not found)"
+        return True
+    pre_text = entry.pre_submission_content
+    if not pre_text:
+        node_payload["agent_pre_text_numbered"] = "(no agent pre-text)"
+    else:
+        node_payload["agent_pre_text_numbered"] = "\n".join(
+            f"{line_number}| {line_text}"
+            for line_number, line_text in enumerate(pre_text.split("\n"), 1)
+        )
+    return True
+
+
 def _handle_read(argv: list[str]) -> int:
     """Read one or more nodes by id; mixed quote-leaf ids (e.g. "12") and group letter ids (e.g. "a")."""
     if len(argv) < 2:
@@ -390,6 +455,7 @@ def _handle_read(argv: list[str]) -> int:
     api = RequirementsTreeControlledApi(project_id, ClaudeCodeAdapter())
     payload_per_node: list[dict] = []
     any_id_failed = False
+    any_quote_node_shown = False
     for requested_node_id_string in requested_node_ids:
         node_payload = api.get_node_by_id(requested_node_id_string, include_children=True)
         if node_payload is None:
@@ -400,8 +466,13 @@ def _handle_read(argv: list[str]) -> int:
             any_id_failed = True
         else:
             node_payload["requested_node_id"] = requested_node_id_string
+            if _attach_numbered_pre_text_to_node_payload(project_id, node_payload):
+                any_quote_node_shown = True
             payload_per_node.append(node_payload)
     print(json.dumps(payload_per_node, indent=2))
+    if any_quote_node_shown:
+        # To stderr so stdout stays pure JSON for parsers; the agent still sees it.
+        print(_PRETEXT_TOOL_REMINDER_LINE, file=sys.stderr)
     return 1 if any_id_failed else 0
 
 
@@ -456,6 +527,92 @@ def _handle_show_top_level(argv: list[str]) -> int:
     return 0
 
 
+def _handle_pretext(argv: list[str]) -> int:
+    """Set how much of a node's agent pre-text is cited.
+
+    Usage: source-of-truth pretext <node_id> <start> <end> | --all | --none
+    Project is resolved from the current session (CLAUDE_CODE_SESSION_ID); an
+    optional `--project <id>` override exists for portability (not shown in help).
+    """
+    tokens = list(argv)
+    explicit_project_id = None
+    if "--project" in tokens:
+        flag_index = tokens.index("--project")
+        if flag_index + 1 >= len(tokens):
+            print("--project needs a value", file=sys.stderr)
+            return 2
+        explicit_project_id = tokens[flag_index + 1]
+        del tokens[flag_index : flag_index + 2]
+
+    usage = "Usage: source-of-truth pretext <node_id> <start> <end> | --all | --none"
+    if len(tokens) < 2:
+        print(usage, file=sys.stderr)
+        return 2
+    node_id = tokens[0]
+    selection_tokens = tokens[1:]
+    if selection_tokens == ["--all"]:
+        new_selection = None            # whole pre-text (clear the narrowing)
+    elif selection_tokens == ["--none"]:
+        new_selection = "none"          # exclude pre-text
+    elif (
+        len(selection_tokens) == 2
+        and selection_tokens[0].lstrip("-").isdigit()
+        and selection_tokens[1].lstrip("-").isdigit()
+    ):
+        new_selection = [int(selection_tokens[0]), int(selection_tokens[1])]
+    else:
+        print(usage, file=sys.stderr)
+        return 2
+
+    project_id, error_message = _resolve_active_project_id_or_error(explicit_project_id)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+
+    tree = load_requirements_tree(project_id)
+    node = tree.nodes_by_id.get(str(node_id))
+    if node is None or node.raw_input_reference is None:
+        print(f"node {node_id!r} not found or is not a quote-reference node", file=sys.stderr)
+        return 1
+
+    if isinstance(new_selection, list):
+        from .raw_input_log_reader import (
+            RawLogEntryNotFoundError,
+            get_raw_log_entry_by_raw_input_id,
+        )
+        try:
+            entry = get_raw_log_entry_by_raw_input_id(
+                project_id, node.raw_input_reference.raw_input_id
+            )
+        except RawLogEntryNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        pre_text_line_count = (
+            len(entry.pre_submission_content.split("\n")) if entry.pre_submission_content else 0
+        )
+        start_line_number, end_line_number = new_selection
+        if pre_text_line_count == 0:
+            print("this entry has no agent pre-text to slice", file=sys.stderr)
+            return 1
+        if start_line_number < 1 or end_line_number > pre_text_line_count or start_line_number > end_line_number:
+            print(
+                f"line range {new_selection} out of bounds (pre-text has "
+                f"{pre_text_line_count} lines)",
+                file=sys.stderr,
+            )
+            return 1
+
+    node.raw_input_reference.pre_text_line_range = new_selection
+    save_requirements_tree_atomically(tree)
+    shown = (
+        "whole pre-text"
+        if new_selection is None
+        else ("excluded" if new_selection == "none" else f"lines {new_selection[0]}-{new_selection[1]}")
+    )
+    print(f"node {node_id}: agent pre-text now {shown}")
+    return 0
+
+
 _VERB_DISPATCH_TABLE = {
     # hook
     "user-prompt-submit-hook": lambda argv: _handle_user_prompt_submit_hook(),
@@ -470,6 +627,7 @@ _VERB_DISPATCH_TABLE = {
     "read": _handle_read,
     "get-node": _handle_read,  # legacy alias; remove in a future refactor
     "search-nodes": _handle_search_nodes,
+    "pretext": _handle_pretext,
     "flush-deferred": _handle_flush_deferred,
     "add-path": _handle_add_path,
     "show-top-level": _handle_show_top_level,
@@ -487,6 +645,7 @@ _VERB_ONE_LINER_DESCRIPTIONS = {
     "read": "Read one or more nodes by id (mixed leaf + group ok).",
     "get-node": "Alias for `read` (kept for backwards compatibility).",
     "search-nodes": "Search node titles + raw quotes by keyword.",
+    "pretext": "Set how much of a node's agent pre-text is cited: <node_id> <start> <end> | --all | --none.",
     "flush-deferred": "Apply queued submits in deferred mode (no-op otherwise).",
     "add-path": "Pin a filesystem path on a project's project-paths node.",
     "show-top-level": "Print only the top-level group/leaf summary for a project.",

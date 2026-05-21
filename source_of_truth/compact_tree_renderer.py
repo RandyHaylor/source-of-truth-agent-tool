@@ -33,7 +33,9 @@ def _resolve_quote_text_or_placeholder(project_id: str, node: RequirementsTreeNo
         return "(no raw_input_reference)"
     char_range_tuple = tuple(ref.char_range) if ref.char_range is not None else None
     try:
-        return resolve_quote_text_from_reference(project_id, ref.raw_input_id, char_range_tuple)
+        return resolve_quote_text_from_reference(
+            project_id, ref.raw_input_id, char_range_tuple, ref.pre_text_line_range
+        )
     except (RawLogEntryNotFoundError, CharRangeOutOfBoundsError, ValueError) as exc:
         return f"(resolve error: {exc})"
 

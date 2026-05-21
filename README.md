@@ -185,6 +185,7 @@ source-of-truth set-mode           <project_id> live|none|deferred
 source-of-truth show-tree          <project_id> [--show-all]
 source-of-truth read               <project_id> <node_id> [<node_id> ...]
 source-of-truth search-nodes       <project_id> <query>
+source-of-truth pretext            <node_id> <start> <end> | --all | --none
 source-of-truth show-top-level     <project_id>
 source-of-truth flush-deferred     <project_id>
 
@@ -228,6 +229,20 @@ How it's populated (installed by `install.py`):
 2. On the **next** prompt, the `UserPromptSubmit` hook reads (and deletes — consume-once) that file, truncates it to the per-project `pre_submission_capture_char_limit` (default 2000, kept from the bottom), and stores it as the new entry's `pre_submission_content`.
 
 Self-gating: the Stop hook no-ops for any session not registered to a project. The capture is Claude-Code-specific (transcript jsonl + Stop event); other platforms would supply their own adapter for the same `pre_submission_content` field.
+
+### Per-node pre-text selection
+
+A quote-reference node cites that pre-text. **By default a new node includes the whole pre-text** (`raw_input_reference.pre_text_line_range` absent). An agent can narrow or drop it later:
+
+```bash
+source-of-truth pretext <node_id> <start> <end>   # cite only these 1-indexed pre-text lines
+source-of-truth pretext <node_id> --all           # whole pre-text (default)
+source-of-truth pretext <node_id> --none          # exclude the pre-text from this node
+```
+
+`read <project_id> <node_id> …` shows each node's pre-text **line-numbered** (so the agent knows which lines to pick) and prints one reminder of the `pretext` verb (on stderr) after all nodes. `resolve_quote_text_from_reference` always includes the selected pre-text, so the reviewer and `search-nodes` see exactly what each node cites. `pretext` takes **no `project_id`** — it resolves the project from the current session (`CLAUDE_CODE_SESSION_ID`) and refuses if the session isn't enrolled.
+
+A session may belong to **only one** project; `add-session`/`init-and-register` refuse to add a session that's already in a different project (remove it there first).
 
 ## Storage layout
 
