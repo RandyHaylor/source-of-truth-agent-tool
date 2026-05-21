@@ -361,19 +361,19 @@ def find_events_since_last_user_prompt(events: list[dict]) -> list[dict]:
     return events[last_user_index + 1 :]
 
 
-def emit_text(
+def build_recent_agent_text_from_relevant_events(
     relevant_events: list[dict],
     include_tool_calls: bool,
     include_tool_results: bool,
     separator: str,
     max_chars: "int | None",
-) -> None:
-    """Print plain text: assistant text (and optionally tool_use call summaries
-    and/or tool_result output) since the last user prompt, in chronological
-    order.
+) -> str:
+    """Assemble the plain-text capture string: assistant text (and optionally
+    tool_use call summaries and/or tool_result output) since the last user
+    prompt, in chronological order.
 
-    When max_chars is set, only the LAST max_chars characters of the assembled
-    output are emitted -- the 'most recent, from the bottom' capture window.
+    When max_chars is set, only the LAST max_chars characters are kept -- the
+    'most recent, from the bottom' capture window. Returns "" when empty.
     """
     messages: list[str] = []
     for event in relevant_events:
@@ -388,10 +388,26 @@ def emit_text(
                 messages.append("\n".join(pieces))
 
     if not messages:
-        return
+        return ""
     output_text = separator.join(messages)
     if max_chars is not None and max_chars >= 0:
         output_text = output_text[-max_chars:]
+    return output_text
+
+
+def emit_text(
+    relevant_events: list[dict],
+    include_tool_calls: bool,
+    include_tool_results: bool,
+    separator: str,
+    max_chars: "int | None",
+) -> None:
+    """Print the assembled capture string to stdout (CLI path)."""
+    output_text = build_recent_agent_text_from_relevant_events(
+        relevant_events, include_tool_calls, include_tool_results, separator, max_chars
+    )
+    if not output_text:
+        return
     sys.stdout.write(output_text)
     if not output_text.endswith("\n"):
         sys.stdout.write("\n")

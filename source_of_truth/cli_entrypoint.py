@@ -32,6 +32,7 @@ from .load_config import (
     ALL_VALID_REVIEWER_MODES,
     ensure_root_directories_exist,
     load_project_settings,
+    project_pending_pre_text_file_path,
     save_project_settings,
 )
 from .conversation_context_injector import build_top_level_injection_text_for_project
@@ -58,6 +59,21 @@ def _build_per_turn_additional_context_line(project_id: str, raw_input_id: int) 
     )
 
 
+def _read_and_consume_pending_pre_text(project_id: str, session_id: str) -> str:
+    """Return the Stop-hook-captured pre-text for this session, then delete it
+    (consume-once) so it is never reused for a later prompt. Empty if none."""
+    pending_file = project_pending_pre_text_file_path(project_id, session_id)
+    try:
+        text = pending_file.read_text()
+    except OSError:
+        return ""
+    try:
+        pending_file.unlink()
+    except OSError:
+        pass
+    return text
+
+
 def _handle_user_prompt_submit_hook() -> int:
     try:
         hook_input = json.loads(sys.stdin.read() or "{}")
@@ -74,16 +90,15 @@ def _handle_user_prompt_submit_hook() -> int:
         or hook_input.get("userPrompt")
         or ""
     )
-    prior_assistant_output_text = (
-        hook_input.get("previous_assistant_output")
-        or hook_input.get("priorAssistantOutput")
-        or ""
-    )
 
     project_id = resolve_project_id_for_session(session_id)
     if project_id is None:
         print(json.dumps({}))
         return 0
+
+    # Pre-text = the agent output captured by the Stop hook after the PREVIOUS
+    # turn (text + tool results). Consume-once so it is never reused later.
+    prior_assistant_output_text = _read_and_consume_pending_pre_text(project_id, session_id)
 
     log_result = append_submission_to_raw_input_log(
         project_id=project_id,
