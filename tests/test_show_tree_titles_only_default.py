@@ -8,7 +8,7 @@ from source_of_truth.compact_tree_renderer import (
     render_tree_titles_only_indented,
     render_tree_compact,
 )
-from source_of_truth.config import (
+from source_of_truth.load_config import (
     ProjectSettings,
     REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
     save_project_settings,

@@ -14,7 +14,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import SOURCE_OF_TRUTH_ROOT_DIR
+from .load_config import SOURCE_OF_TRUTH_ROOT_DIR
 from .cross_platform_file_lock import acquire_exclusive_file_lock
 
 

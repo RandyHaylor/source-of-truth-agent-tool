@@ -9,7 +9,7 @@ from source_of_truth.ai_cli_adapter_interface import (
     AiCliAdapterInterface,
     PersistentReviewerSessionHandle,
 )
-from source_of_truth.config import (
+from source_of_truth.load_config import (
     REVIEWER_MODE_DEFER_UNTIL_FLUSH,
     REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
     GlobalSettings,
@@ -195,7 +195,7 @@ def test_partial_per_op_verdicts_apply_only_approved_ops_in_live_mode():
         PerOperationVerdict,
         ReviewerVerdict,
     )
-    from source_of_truth.config import REVIEWER_MODE_LIVE_REVIEW_EVERY_SUBMIT
+    from source_of_truth.load_config import REVIEWER_MODE_LIVE_REVIEW_EVERY_SUBMIT
 
     save_project_settings(ProjectSettings(
         project_id="p-partial",

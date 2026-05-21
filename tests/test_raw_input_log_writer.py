@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from source_of_truth.config import (
+from source_of_truth.load_config import (
     PRE_SUBMISSION_CAPTURE_CHAR_LIMIT,
     project_raw_input_log_file_path,
 )

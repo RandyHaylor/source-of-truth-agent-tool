@@ -10,19 +10,23 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from .config import (
+from .load_config import (
     PRE_SUBMISSION_CAPTURE_CHAR_LIMIT,
     project_directory_for,
     project_raw_input_log_file_path,
+    resolve_effective_global_settings,
 )
 from .cross_platform_file_lock import acquire_exclusive_file_lock
 from .raw_input_log_entry_schema import RawInputLogEntry
 
 
-def truncate_pre_text_to_capture_limit(prior_assistant_output_text: str) -> str:
-    if len(prior_assistant_output_text) <= PRE_SUBMISSION_CAPTURE_CHAR_LIMIT:
+def truncate_pre_text_to_capture_limit(
+    prior_assistant_output_text: str,
+    capture_char_limit: int = PRE_SUBMISSION_CAPTURE_CHAR_LIMIT,
+) -> str:
+    if len(prior_assistant_output_text) <= capture_char_limit:
         return prior_assistant_output_text
-    return prior_assistant_output_text[-PRE_SUBMISSION_CAPTURE_CHAR_LIMIT:]
+    return prior_assistant_output_text[-capture_char_limit:]
 
 
 def _format_iso_seconds_utc_now() -> str:
@@ -41,6 +45,10 @@ def append_submission_to_raw_input_log(
 ) -> dict[str, Any]:
     project_directory_for(project_id).mkdir(parents=True, exist_ok=True)
     log_file_path = project_raw_input_log_file_path(project_id)
+    # Project override of the capture window if set, else the global default.
+    capture_char_limit = resolve_effective_global_settings(
+        project_id
+    ).pre_submission_capture_char_limit
 
     with acquire_exclusive_file_lock(log_file_path):
         if log_file_path.exists():
@@ -57,7 +65,7 @@ def append_submission_to_raw_input_log(
             raw_input_id=next_raw_input_id,
             timestamp_iso=_format_iso_seconds_utc_now(),
             pre_submission_content=truncate_pre_text_to_capture_limit(
-                prior_assistant_output_text
+                prior_assistant_output_text, capture_char_limit
             ),
             submission_text=submission_text,
         )

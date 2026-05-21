@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-from source_of_truth.config import (
+from source_of_truth.load_config import (
     ProjectSettings,
     REVIEWER_MODE_LIVE_REVIEW_EVERY_SUBMIT,
     save_project_settings,

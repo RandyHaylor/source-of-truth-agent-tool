@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Optional
 
-from .config import project_raw_input_log_file_path
+from .load_config import project_raw_input_log_file_path
 from .raw_input_log_entry_schema import RawInputLogEntry
 
 

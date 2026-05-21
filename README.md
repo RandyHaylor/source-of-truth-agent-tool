@@ -155,6 +155,22 @@ Live haiku round-trip in steady state is roughly 13–18s per call after a one-t
 
 Set via `reviewer_model_name` in `global-settings.json` or `reviewer_model_name_override` per project. Default `claude-haiku-4-5-20251001` for cost and speed. Override per project to use a stronger model when needed.
 
+## Per-project setting overrides
+
+Every global setting can be overridden per project. Resolution is always **project → global**: a project value wins if present, otherwise the global default is used.
+
+Two ways to set a per-project override:
+- The dedicated reviewer fields `reviewer_mode_override` / `reviewer_model_name_override` (written by `sot set-mode`, etc.).
+- A generic `overrides` map in the project's `project-settings.json`, keyed by the **exact** global setting name. Example:
+  ```json
+  "overrides": {
+    "reviewer_mode": "none",
+    "pre_submission_capture_char_limit": 4000
+  }
+  ```
+
+A freshly created `project-settings.json` ships with an empty `overrides` map plus a `_comment_overrides` key (a JSON "comment", ignored by the loader) listing every overridable key. `load_config.resolve_effective_global_settings(project_id)` returns the merged result, and all consumers (validator, context injector, raw-input writer, reviewer) read through it.
+
 ## CLI verbs
 
 ```bash
@@ -189,10 +205,10 @@ By convention `project_id == initializing session_id` (what `init-and-register` 
 Both global hooks are installed by `python3 install.py` (see Quickstart). They fire on every Claude Code session but **self-gate on project membership** — they silently no-op for any session whose `session_id` is not in a project's `member_sessions` list, so leaving them installed is safe even when you're not using the tool.
 
 `install.py`:
-- Deploys the repo into `~/.claude/skills/source-of-truth-agent-tool/` (skipping the copy if you cloned directly into that folder).
-- Writes the two wrapper scripts in that dir. Each adds the install dir to `sys.path`, calls into the `source_of_truth` package next to it, and emits `{}` on any error.
-- Patches `~/.claude/settings.json` to register both hooks if not already present. Other hook entries are left untouched. `settings.json` is backed up with a timestamp.
-- Initializes `~/.source-of-truth/global-settings.json` with defaults (`reviewer_mode: live`, `reviewer_model_name: claude-haiku-4-5-20251001`).
+- Deploys the repo into `~/.claude/skills/source-of-truth-agent-tool/` (skipping the copy if you cloned directly into that folder). **Reinstall is non-destructive:** an existing install dir is never deleted — the whole folder is *moved* to `~/.claude/source-of-truth-bak/<UTC-timestamp>/source-of-truth-agent-tool/` (logged to the console), then the repo is copied in fresh.
+- Writes the hook wrapper scripts in that dir. Each adds the install dir to `sys.path`, calls into the `source_of_truth` package next to it, and emits `{}` on any error.
+- Patches `~/.claude/settings.json` to register the hooks if not already present. Other hook entries are left untouched. `settings.json` is backed up with a timestamp.
+- Initializes `~/.source-of-truth/global-settings.json` from the shipped `default-global-settings.json` if absent. All tunable settings live in JSON (loaded by `load_config.py`): `reviewer_mode`, `reviewer_model_name`, `reviewer_command`, `pre_submission_capture_char_limit`, `char_range_allowed_above_threshold`, `min_char_range_length`, and the agent-guidance text templates.
 - Idempotent — safe to re-run after pulling a newer repo.
 
 To remove cleanly:
@@ -201,7 +217,7 @@ To remove cleanly:
 python3 uninstall.py
 ```
 
-Removes `~/.claude/skills/source-of-truth-agent-tool/` and scrubs the matching hook entries from `settings.json`. Your captured raw input logs, requirements trees, and global settings under `~/.source-of-truth/` are NOT touched.
+Removes the on-PATH `source-of-truth` stub and scrubs the matching hook entries from `settings.json`. It deliberately does **not** delete `~/.claude/skills/source-of-truth-agent-tool/` (it may be an in-place clone) — remove that folder manually for a full uninstall. Your captured raw input logs, requirements trees, and global settings under `~/.source-of-truth/` are NOT touched.
 
 ## Storage layout
 
@@ -212,7 +228,7 @@ Removes `~/.claude/skills/source-of-truth-agent-tool/` and scrubs the matching h
     projects/
         <project_id>/                                 # project_id = session_id of initializing session
             project-<project_id>-source-of-truth.json # the requirements tree (sole writer = our app)
-            project-settings.json                     # member sessions; mode override; model override; reviewer history
+            project-settings.json                     # member sessions; reviewer history; `overrides` map + dedicated mode/model overrides
             raw_input_log.json                        # rolling log, grouped by session_id, raw_input_id sequential from 0
             reviewer_thinking.log                     # full streamed log of reviewer NDJSON events
             deferred_change_sets_queue.jsonl          # only used in deferred mode

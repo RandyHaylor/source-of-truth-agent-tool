@@ -13,7 +13,7 @@ from .ai_cli_adapter_interface import (
 )
 from datetime import datetime, timezone
 
-from .config import (
+from .load_config import (
     load_project_settings,
     project_directory_for,
     project_raw_input_log_file_path,

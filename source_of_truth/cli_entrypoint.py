@@ -28,7 +28,7 @@ import sys
 
 from .add_session_to_project_cli import add_session_to_project
 from .ai_cli_adapter_claude_code import ClaudeCodeAdapter
-from .config import (
+from .load_config import (
     ALL_VALID_REVIEWER_MODES,
     ensure_root_directories_exist,
     load_project_settings,

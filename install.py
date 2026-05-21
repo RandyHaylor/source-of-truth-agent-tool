@@ -173,22 +173,44 @@ def is_running_from_install_dir(repo_dir, install_dir):
     return os.path.realpath(repo_dir) == os.path.realpath(install_dir)
 
 
+def back_up_existing_install_dir_by_moving_it(install_dir):
+    """Move an existing install dir to a timestamped backup, never delete it.
+
+    Backup location:
+        ~/.claude/source-of-truth-bak/<UTC-timestamp>/source-of-truth-agent-tool/
+
+    This makes a reinstall non-destructive by default: the whole old folder
+    (including anything a user may have placed in it) is preserved, not wiped.
+    Returns the backup path, or None if there was no existing dir to move.
+    """
+    if not os.path.isdir(install_dir):
+        return None
+    timestamp = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    backup_parent_dir = os.path.join(home_claude_dir(), "source-of-truth-bak", timestamp)
+    backup_dir = os.path.join(backup_parent_dir, SKILL_INSTALL_DIR_NAME)
+    os.makedirs(backup_parent_dir, exist_ok=True)
+    shutil.move(install_dir, backup_dir)
+    return backup_dir
+
+
 def copy_repo_contents_into_install_dir(repo_dir, install_dir):
-    """Copy every top-level item in the repo into the install dir.
+    """Deploy the repo into the install dir.
 
     Skips .git/, __pycache__/, *.pyc, and any *.bak* settings backups that
-    might happen to be under the repo (defensive). Existing files in the
-    install dir are overwritten; stale files (in install dir but not in repo)
-    are removed first to avoid leftover modules from older installs.
+    might happen to be under the repo (defensive). Any existing install dir is
+    NOT deleted -- it is moved to a timestamped backup first (so renamed/removed
+    files don't linger AND nothing is ever destroyed), then the repo is copied
+    in fresh.
     """
     ignore_patterns_callable = shutil.ignore_patterns(
         ".git", "__pycache__", "*.pyc", "*.bak.*",
     )
-    # Wipe the install dir before copy so renamed/removed files don't linger,
-    # but only if it's a real directory we created -- never wipe an arbitrary
-    # destination. Caller already resolved install_dir to ~/.claude/skills/<name>/.
-    if os.path.isdir(install_dir):
-        shutil.rmtree(install_dir)
+    backup_dir = back_up_existing_install_dir_by_moving_it(install_dir)
+    if backup_dir:
+        print(
+            "  NOTE: existing install dir preserved (not deleted); moved to backup:\n"
+            f"    {backup_dir}"
+        )
     shutil.copytree(repo_dir, install_dir, ignore=ignore_patterns_callable)
     print(f"  copied repo -> {install_dir}")
 

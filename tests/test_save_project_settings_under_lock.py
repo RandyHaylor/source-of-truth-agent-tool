@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import threading
 
-from source_of_truth.config import (
+from source_of_truth.load_config import (
     ProjectSettings,
     load_project_settings,
     project_settings_file_path,

@@ -17,7 +17,7 @@ from source_of_truth.cli_entrypoint import (
     _handle_submit_change_set,
     _resolve_change_set_payload_from_argv_after_project_id,
 )
-from source_of_truth.config import (
+from source_of_truth.load_config import (
     ProjectSettings,
     REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
     save_project_settings,

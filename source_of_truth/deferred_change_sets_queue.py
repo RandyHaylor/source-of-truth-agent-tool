@@ -11,7 +11,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from .config import project_deferred_change_sets_queue_file_path
+from .load_config import project_deferred_change_sets_queue_file_path
 from .cross_platform_file_lock import acquire_exclusive_file_lock
 
 

@@ -12,7 +12,7 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 
 @pytest.fixture(autouse=True)
 def isolated_source_of_truth_root(tmp_path, monkeypatch):
-    from source_of_truth import config as config_module
+    from source_of_truth import load_config as config_module
 
     isolated_root_dir = tmp_path / ".source-of-truth"
     isolated_projects_dir = isolated_root_dir / "projects"

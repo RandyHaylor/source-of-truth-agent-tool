@@ -5,12 +5,12 @@ import sys
 
 import pytest
 
-from source_of_truth import config as config_module
+from source_of_truth import load_config as config_module
 from source_of_truth.cli_entrypoint import (
     _handle_init_and_register,
     _handle_set_mode,
 )
-from source_of_truth.config import (
+from source_of_truth.load_config import (
     REVIEWER_MODE_DEFER_UNTIL_FLUSH,
     REVIEWER_MODE_LIVE_REVIEW_EVERY_SUBMIT,
     REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,

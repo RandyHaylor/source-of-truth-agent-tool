@@ -11,7 +11,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from .config import project_directory_for, project_source_of_truth_file_path
+from .load_config import project_directory_for, project_source_of_truth_file_path
 from .cross_platform_file_lock import acquire_exclusive_file_lock
 from .requirements_tree_node_schema import RequirementsTree
 

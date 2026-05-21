@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import json
 
-from source_of_truth.config import SOURCE_OF_TRUTH_ROOT_DIR, save_project_settings, load_project_settings
+from source_of_truth.load_config import SOURCE_OF_TRUTH_ROOT_DIR, save_project_settings, load_project_settings
 from source_of_truth.pending_messages_for_raw_input_sender import (
     add_pending_message_for_raw_input_sender,
     show_pending_messages_to_raw_input_sender_for_project,

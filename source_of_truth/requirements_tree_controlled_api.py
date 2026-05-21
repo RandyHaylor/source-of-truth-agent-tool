@@ -16,12 +16,13 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from .ai_cli_adapter_interface import AiCliAdapterInterface
-from .config import (
+from .load_config import (
     INTERACTION_TIME_AGENT_GUIDANCE,
     REVIEWER_MODE_DEFER_UNTIL_FLUSH,
     REVIEWER_MODE_LIVE_REVIEW_EVERY_SUBMIT,
     REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
     project_reviewer_thinking_log_file_path,
+    resolve_effective_global_settings,
     resolve_reviewer_mode_for_project,
 )
 from .conversation_context_injector import build_top_level_injection_text_for_project
@@ -96,6 +97,10 @@ class RequirementsTreeControlledApi:
         self._project_id = project_id
         self._reviewer_lifecycle = ReviewerSessionLifecycleManager(project_id, ai_cli_adapter)
 
+    def _effective_interaction_guidance(self) -> str:
+        """Project override of the agent-guidance text if set, else global default."""
+        return resolve_effective_global_settings(self._project_id).interaction_time_agent_guidance
+
     # ----- Read endpoints -----
 
     def get_top_level_node(self) -> str:
@@ -110,7 +115,7 @@ class RequirementsTreeControlledApi:
             return None
         result: dict[str, Any] = {
             "node": node.to_json_dict(),
-            "agent_guidance": INTERACTION_TIME_AGENT_GUIDANCE,
+            "agent_guidance": self._effective_interaction_guidance(),
         }
         if include_children:
             result["children"] = [
@@ -141,11 +146,18 @@ class RequirementsTreeControlledApi:
                 continue
             if query_lowered in quote_text.lower():
                 matches.append(node.to_json_dict())
-        return {"matches": matches, "agent_guidance": INTERACTION_TIME_AGENT_GUIDANCE}
+        return {"matches": matches, "agent_guidance": self._effective_interaction_guidance()}
 
     # ----- Mutating endpoints -----
 
     def submit_requirements_tree_change_set(
+        self, change_set_json_dict: dict[str, Any]
+    ) -> ChangeSetSubmissionResult:
+        result = self._submit_requirements_tree_change_set_impl(change_set_json_dict)
+        result.agent_guidance = self._effective_interaction_guidance()
+        return result
+
+    def _submit_requirements_tree_change_set_impl(
         self, change_set_json_dict: dict[str, Any]
     ) -> ChangeSetSubmissionResult:
         change_set = RequirementsTreeChangeSet.from_json_dict(change_set_json_dict)
@@ -287,6 +299,11 @@ class RequirementsTreeControlledApi:
         )
 
     def flush_deferred_change_sets_for_review(self) -> ChangeSetSubmissionResult:
+        result = self._flush_deferred_change_sets_for_review_impl()
+        result.agent_guidance = self._effective_interaction_guidance()
+        return result
+
+    def _flush_deferred_change_sets_for_review_impl(self) -> ChangeSetSubmissionResult:
         """Drain the deferred queue, merge into one change-set, run live review, apply on approval."""
         thinking_log_path = str(project_reviewer_thinking_log_file_path(self._project_id))
         drained_entries = read_and_clear_all_deferred_change_sets(self._project_id)

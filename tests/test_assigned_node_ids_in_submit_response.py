@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 from source_of_truth.cli_entrypoint import _handle_submit_change_set
-from source_of_truth.config import (
+from source_of_truth.load_config import (
     ProjectSettings,
     REVIEWER_MODE_NO_REVIEWER_DIRECT_APPLY,
     save_project_settings,

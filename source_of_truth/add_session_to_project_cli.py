@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import sys
 
-from .config import (
+from .load_config import (
+    PROJECT_SETTINGS_OVERRIDE_COMMENT_KEY,
+    PROJECT_SETTINGS_OVERRIDE_COMMENT_TEXT,
     ensure_root_directories_exist,
     load_project_settings,
+    project_settings_file_path,
     save_project_settings,
 )
 
@@ -21,7 +24,15 @@ from .config import (
 def add_session_to_project(project_id: str, session_id: str, conversation_path: str) -> bool:
     """Returns True if a new membership was added, False if the session was already a member."""
     ensure_root_directories_exist()
+    project_settings_file_already_existed = project_settings_file_path(project_id).exists()
     settings = load_project_settings(project_id)
+    if not project_settings_file_already_existed:
+        # Fresh project: leave `overrides` empty (inherit all globals) but seed an
+        # inline JSON "comment" documenting how to override each global setting.
+        settings.raw_extra.setdefault(
+            PROJECT_SETTINGS_OVERRIDE_COMMENT_KEY,
+            PROJECT_SETTINGS_OVERRIDE_COMMENT_TEXT,
+        )
     for existing_member in settings.member_sessions:
         if isinstance(existing_member, dict) and existing_member.get("session_id") == session_id:
             return False

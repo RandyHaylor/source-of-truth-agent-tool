@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from source_of_truth import config as config_module
-from source_of_truth.config import (
+from source_of_truth import load_config as config_module
+from source_of_truth.load_config import (
     DEFAULT_REVIEWER_MODEL_NAME,
     GlobalSettings,
     load_global_settings,

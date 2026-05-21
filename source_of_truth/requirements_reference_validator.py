@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .config import CHAR_RANGE_ALLOWED_ABOVE_THRESHOLD, MIN_CHAR_RANGE_LENGTH
+from .load_config import resolve_effective_global_settings
 from .raw_input_log_reader import (
     RawLogEntryNotFoundError,
     get_raw_log_entry_by_raw_input_id,
@@ -40,11 +40,17 @@ def validate_raw_input_reference(
     if char_range is None:
         return
 
+    # Resolve the citation rules with this project's overrides applied
+    # (project value if set, else global default).
+    effective_settings = resolve_effective_global_settings(project_id)
+    char_range_allowed_above_threshold = effective_settings.char_range_allowed_above_threshold
+    min_char_range_length = effective_settings.min_char_range_length
+
     # char_range was provided -- it is only allowed when the submission is long enough
     # to need slicing.
-    if submission_text_length <= CHAR_RANGE_ALLOWED_ABOVE_THRESHOLD:
+    if submission_text_length <= char_range_allowed_above_threshold:
         raise ReferenceValidationError(
-            f"char_range is only allowed when submission length > {CHAR_RANGE_ALLOWED_ABOVE_THRESHOLD}; "
+            f"char_range is only allowed when submission length > {char_range_allowed_above_threshold}; "
             f"this submission is {submission_text_length} chars, so cite the whole entry instead."
         )
 
@@ -60,9 +66,9 @@ def validate_raw_input_reference(
     if end_char_index < start_char_index:
         raise ReferenceValidationError(f"char_range end < start: {char_range}")
     range_length = (end_char_index - start_char_index) + 1
-    if range_length < MIN_CHAR_RANGE_LENGTH:
+    if range_length < min_char_range_length:
         raise ReferenceValidationError(
-            f"char_range length {range_length} below minimum {MIN_CHAR_RANGE_LENGTH}"
+            f"char_range length {range_length} below minimum {min_char_range_length}"
         )
 
 
