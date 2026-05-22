@@ -3,9 +3,15 @@ name: source-of-truth-agent-tool
 description: Walk the user through getting started with the source-of-truth-agent-tool (a verbatim-quote-based requirements ledger that prevents AI agents from drifting on long projects). Trigger when the user has cloned or installed the repo and asks how to get started, how to use it, how to set it up for their project, how to register a session, how to pick a reviewer mode, or anything similar about post-install setup.
 ---
 
+> **YOU MUST REGISTER THE CURRENT SESSION WITH A SOURCE OF TRUTH (SOT) PROJECT FIRST**
+
 # source-of-truth-agent-tool — start-here skill
 
-Goal: get the user from "the hooks are installed" to "this project is registered, the mode is picked, the next prompt I type will be captured and the agent can build the requirements tree."
+The entire point of this skill is to have the script copy verbatim user quotes and allow the agent to arrange them into a convenient organized requirements doc.
+
+This solves the issue of ai agents using interpretation and paraphrasing, losing critical requirement details.
+
+Goal: take the user from *hooks installed* → *project registered, mode picked, prompts capturing, tree building*.
 
 ## What this system is
 
@@ -29,41 +35,24 @@ Goal: get the user from "the hooks are installed" to "this project is registered
 
 Do NOT dump all instructions at once. Walk the user step by step. After each step, confirm what you did and only then move to the next.
 
-## Always run install.py first as a health check
+## Setup
 
-Before doing anything else with this skill, run `python3 install.py` from the install dir. It is **idempotent and safe to re-run**:
-- If everything is already correctly installed, it reports each step as a no-op.
-- If the hook entries in `~/.claude/settings.json` are missing, stale, or pointing at an old location, it scrubs them and writes the correct ones.
-- If the wrapper scripts or copied package are missing or out of date, it rewrites them.
-- If `~/.source-of-truth/global-settings.json` is missing, it writes the defaults.
+`project-start-wizard.md` (next to this file) is the step-by-step setup — follow from the top, one step per turn.
+- "skip ahead" / "already did X" → fast-forward, but first confirm prior steps produced the expected on-disk state
 
-Do this every time you start setting up a project with this skill. It's the canonical way to be sure the hooks and on-disk state are healthy before relying on them.
+## After setup — capture model
 
-The install dir is `~/.claude/skills/source-of-truth-agent-tool/` (where this SKILL.md lives). If the user cloned the repo elsewhere, use the install.py at the cloned location — it will deploy itself into the skill folder.
+- **Pre-text is auto-captured.** A `Stop` hook records your prior turn (assistant text + tool-result summaries); a `UserPromptSubmit` hook stores it as the next entry's `pre_submission_content`.
+  - So a brief reply (`yes`, `option B`) is a complete requirement — the pre-text already holds the question/plan. Don't restate it.
+- **Pre-text defaults to whole.** `read` shows it line-numbered; narrow if noisy: `pretext <node_id> <start> <end>` (those lines) · `--all` (whole) · `--none` (drop).
 
-## Then follow the wizard
-
-The full step-by-step setup walkthrough lives at `project-start-wizard.md` next to this file. Read it and follow it from the top, one step per turn.
-
-If the user says "skip ahead" or "I already did X," you can fast-forward, but always confirm the prior steps actually produced the expected on-disk state before moving on.
-
-If at any point you find a missing prerequisite (install dir not present, settings.json missing the hook entries, etc.), re-run `install.py` rather than improvising a workaround.
-
-## After setup — capture model in one screen
-
-**Pre-text is captured for you automatically.** A `Stop` hook records your previous turn's output (assistant text + tool-result summaries) and a `UserPromptSubmit` hook stores it as the next entry's `pre_submission_content`. So when you ask the user a question and they answer briefly (`yes`, `option B`), you can capture that short reply as a requirement node — the pre-text already carries the question/plan they were answering. You don't need to restate it.
-
-A new node includes the **whole** pre-text by default. When you `read` a node you'll see its pre-text line-numbered; if it's noisy, narrow it: `source-of-truth pretext <node_id> <start> <end>` (cite only those lines), `--all` (whole), or `--none` (drop it). No project id needed — it's resolved from your session.
-
-Once the wizard finishes, the agent captures requirements via the on-PATH `source-of-truth` wrapper. Three rules to remember:
+Capture via the on-PATH `source-of-truth` wrapper. Three rules:
 
 1. **Every node has a parent.** `parent_id` is required on every `add` op. Use `"0"` for top-level only when no appropriate parent exists. Prefer organizing under a group node (letter id like `a`, `b`, `aa`).
 2. **Every node has a title.** `short_neutral_title` is required, 1–50 chars, the SUBJECT of the requirement (not the spec). The reviewer will rewrite (via `amended_short_title`) if a title overreaches the cited slice; ops aren't rejected for that.
 3. **Group nodes organize the tree.** `add_group` op (or the combo shortcut) creates a group with auto-allocated letter id. New projects start **pre-scaffolded** with four top-level groups — `resources` (links/paths/docs the user supplies), `user-interaction-preferences`, `technical-requirements`, `current-project-documentation` — so file new nodes under the fitting one (add more groups as needed).
 
-Three convenience-flag shortcuts for `submit-change-set`, listed in promotion order:
-
-No project id is ever passed — every command resolves it from your session.
+`submit-change-set` shortcuts (promotion order):
 
 ```bash
 # Combo (encouraged) — creates a new group AND a leaf inside it in one change-set

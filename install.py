@@ -488,31 +488,16 @@ def initialize_global_settings_file():
     print(f"  wrote default global settings -> {global_settings_path}")
 
 
-def main():
-    repo_dir = os.path.dirname(os.path.abspath(__file__))
-    install_dir = install_dir_path()
-    settings_path = settings_json_path()
-    python_launcher = python_launcher_for_current_platform()
+def ensure_settings_json_hook_entries(install_dir, settings_path, python_launcher):
+    """Idempotently ensure ~/.claude/settings.json has the four SoT hook entries
+    pointing at install_dir; scrub stale entries pointing elsewhere. Returns True
+    if settings.json was modified. Reused by main() and the register-time health
+    check, so the hook-registration logic lives in exactly one place."""
+    user_hook_path = os.path.join(install_dir, USER_PROMPT_SUBMIT_HOOK_FILENAME)
+    post_hook_path = os.path.join(install_dir, POST_TOOL_USE_HOOK_FILENAME)
+    stop_capture_hook_path = os.path.join(install_dir, STOP_CAPTURE_HOOK_FILENAME)
+    what_is_session_hook_path = os.path.join(install_dir, WHAT_IS_SESSION_HOOK_FILENAME)
 
-    print(f"Repo dir:    {repo_dir}")
-    print(f"Install dir: {install_dir}")
-    print(f"Settings:    {settings_path}\n")
-
-    print("Step 1: deploy repo contents to install dir")
-    if is_running_from_install_dir(repo_dir, install_dir):
-        print(f"  running from install dir -- copy step skipped")
-    else:
-        os.makedirs(home_skills_dir(), exist_ok=True)
-        copy_repo_contents_into_install_dir(repo_dir, install_dir)
-    print()
-
-    print("Step 2: write hook wrapper scripts in install dir")
-    user_hook_path, post_hook_path, stop_capture_hook_path, what_is_session_hook_path = (
-        write_wrapper_scripts(install_dir)
-    )
-    print()
-
-    print("Step 3: update ~/.claude/settings.json")
     settings_data = load_or_init_settings_json(settings_path)
     user_command = f'{python_launcher} "{user_hook_path}"'
     post_command = f'{python_launcher} "{post_hook_path}"'
@@ -588,6 +573,35 @@ def main():
         write_settings_json(settings_path, settings_data)
     else:
         print("  no settings.json changes needed")
+    return settings_was_modified
+
+
+def main():
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    install_dir = install_dir_path()
+    settings_path = settings_json_path()
+    python_launcher = python_launcher_for_current_platform()
+
+    print(f"Repo dir:    {repo_dir}")
+    print(f"Install dir: {install_dir}")
+    print(f"Settings:    {settings_path}\n")
+
+    print("Step 1: deploy repo contents to install dir")
+    if is_running_from_install_dir(repo_dir, install_dir):
+        print(f"  running from install dir -- copy step skipped")
+    else:
+        os.makedirs(home_skills_dir(), exist_ok=True)
+        copy_repo_contents_into_install_dir(repo_dir, install_dir)
+    print()
+
+    print("Step 2: write hook wrapper scripts in install dir")
+    user_hook_path, post_hook_path, stop_capture_hook_path, what_is_session_hook_path = (
+        write_wrapper_scripts(install_dir)
+    )
+    print()
+
+    print("Step 3: update ~/.claude/settings.json")
+    ensure_settings_json_hook_entries(install_dir, settings_path, python_launcher)
     print()
 
     print("Step 4: write `source-of-truth` wrapper inside skill folder")

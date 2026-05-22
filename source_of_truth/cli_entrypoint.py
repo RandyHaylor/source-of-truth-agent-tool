@@ -170,6 +170,9 @@ def _handle_init_and_register(argv: list[str]) -> int:
         return 2
     session_id, conversation_path = argv
     project_id = session_id
+    from .install_health_check import run_install_health_check_quietly
+    if run_install_health_check_quietly():
+        print("Installation health check complete")
     ensure_root_directories_exist()
     try:
         was_added = add_session_to_project(project_id, session_id, conversation_path)
