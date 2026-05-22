@@ -61,12 +61,12 @@ Ask the user which mode they want, with this short explanation:
 
 - **live** (default) — every requirement-capture submit hits a Haiku reviewer (~13–18s/call). Safest. Pick this if you want maximum protection against the agent miscapturing.
 - **none** — reviewer never called; ops apply directly after local validation. Fastest and free. Pick this if you trust the agent and want raw speed.
-- **deferred** — submits queue up. Tree stays unchanged until the agent runs `source-of-truth flush-deferred <project_id>` (or calls the equivalent in-process API) to merge and review the batch. Pick this if the agent will do extended planning before any review is useful.
+- **deferred** — submits queue up. Tree stays unchanged until the agent runs `source-of-truth flush-deferred` (or calls the equivalent in-process API) to merge and review the batch. Pick this if the agent will do extended planning before any review is useful.
 
 Then run:
 
 ```bash
-source-of-truth set-mode <session_id> live          # or none, or deferred
+source-of-truth set-mode live          # or none, or deferred (project resolved from your session)
 ```
 
 Confirm the output says the override was set.
@@ -98,11 +98,11 @@ If they don't see it after sending one message, something is wrong — most like
 ## Step 6 — Tell the agent it's set up (this turn)
 
 In the agent's response after the wizard completes, the agent should briefly state:
-- The project_id
+- That this session is now enrolled in a source-of-truth project (commands resolve it automatically — no project id to pass)
 - The active reviewer mode
 - Any pinned paths
 - That every prompt from now on is auto-logged
-- That the agent can capture nodes by running `source-of-truth submit-change-set <project_id> --add <raw_input_id> --parent <pid_or_letter> --title "<subject>"` (or the combo form with `--new-group "<group>"`); see SKILL.md for the full shortcut + JSON forms
+- That the agent can capture nodes by running `source-of-truth submit-change-set --add <raw_input_id> --parent <parent_id_or_letter> --title "<subject>"` (or the combo form with `--new-group "<group>"`); see SKILL.md for the full shortcut + JSON forms
 
 This grounds future turns: the agent now knows the project is live and can start using the API as the canonical capture mechanism.
 

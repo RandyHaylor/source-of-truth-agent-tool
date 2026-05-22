@@ -7,6 +7,26 @@ description: Walk the user through getting started with the source-of-truth-agen
 
 Goal: get the user from "the hooks are installed" to "this project is registered, the mode is picked, the next prompt I type will be captured and the agent can build the requirements tree."
 
+## What this system is
+
+- The requirements tree is **pointers to the user's verbatim quotes** — auto-logged on every prompt.
+- You never write requirement text. You only add **short subject titles** for nodes and groups.
+- Commands take **no project id** — it's resolved from your session. (If you're not in a project yet, see setup below.)
+- Each prompt hands you a `raw_input_id`. File it under a group:
+  `submit-change-set --add <raw_input_id> --parent <group> --title "<subject>"`
+- `read <node_id>` → the verbatim quote + line-numbered pre-text.
+- `pretext <node_id> <start> <end> | --all | --none` → trim a node's pre-text.
+- Payoff: requirements stay **verbatim, incorruptible, organized**.
+
+## Expected workflow (each user turn)
+
+1. The user sends a prompt; it's auto-logged and you receive its `raw_input_id` in your turn context.
+2. File it under the fitting group: `submit-change-set --add <raw_input_id> --parent <group> --title "<subject>"`
+3. The reviewer approves (or rejects with a reason — fix and resubmit).
+4. `read <node_id>` → the verbatim quote + line-numbered pre-text.
+5. Trim if noisy: `pretext <node_id> <start> <end> | --all | --none`.
+6. A brief reply ("yes") is fine — the pre-text carries the question, so a short answer is still a complete, citable requirement.
+
 Do NOT dump all instructions at once. Walk the user step by step. After each step, confirm what you did and only then move to the next.
 
 ## Always run install.py first as a health check
@@ -43,27 +63,29 @@ Once the wizard finishes, the agent captures requirements via the on-PATH `sourc
 
 Three convenience-flag shortcuts for `submit-change-set`, listed in promotion order:
 
+No project id is ever passed — every command resolves it from your session.
+
 ```bash
 # Combo (encouraged) — creates a new group AND a leaf inside it in one change-set
-source-of-truth submit-change-set <project_id> \
-  --add <raw_input_id> --parent <pid_or_letter> --title "<leaf>" --new-group "<group title>"
+source-of-truth submit-change-set \
+  --add <raw_input_id> --parent <parent_id_or_letter> --title "<leaf>" --new-group "<group title>"
 
 # Leaf only — under an existing parent (group letter id, leaf id, or "0")
-source-of-truth submit-change-set <project_id> \
-  --add <raw_input_id> --parent <pid_or_letter> --title "<leaf title>"
+source-of-truth submit-change-set \
+  --add <raw_input_id> --parent <parent_id_or_letter> --title "<leaf title>"
 
 # Group only
-source-of-truth submit-change-set <project_id> \
-  --add-group --parent <pid_or_letter> --title "<group title>"
+source-of-truth submit-change-set \
+  --add-group --parent <parent_id_or_letter> --title "<group title>"
 ```
 
 Read / view:
 
 ```bash
-source-of-truth show-tree   <project_id>            # default: indented "<id> <title>" only
-source-of-truth show-tree   <project_id> --show-all # add inlined raw quote text for top 2 levels
-source-of-truth read        <project_id> <id> [<id> ...]   # mixed leaf + group ids
-source-of-truth search-nodes <project_id> <query>
+source-of-truth show-tree              # default: indented "<id> <title>" only
+source-of-truth show-tree --show-all   # add inlined raw quote text for top 2 levels
+source-of-truth read <id> [<id> ...]   # mixed leaf + group ids
+source-of-truth search-nodes <query>
 ```
 
-JSON form is still available for multi-op change-sets (`submit-change-set <pid> '<json>'` or `@file.json` or `-` for stdin). See `README.md` for the full op schema (add, add_group, reparent, remove, modify_reference, reorder_children).
+JSON form is still available for multi-op change-sets (`submit-change-set '<json>'` or `@file.json` or `-` for stdin). See `README.md` for the full op schema (add, add_group, reparent, remove, modify_reference, reorder_children).

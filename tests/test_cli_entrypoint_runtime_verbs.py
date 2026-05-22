@@ -45,10 +45,11 @@ def test_per_turn_additional_context_line_is_one_line_with_two_commands():
     line = _build_per_turn_additional_context_line(project_id="proj-x", raw_input_id=42)
     assert "\n" not in line, "must be a single line"
     assert "id:42" in line
-    assert "source-of-truth submit-change-set proj-x" in line
-    assert "raw_input_id=42" in line
-    assert "source-of-truth show-tree proj-x" in line
+    assert "source-of-truth submit-change-set --add 42" in line
+    assert "source-of-truth show-tree" in line
     assert "SKILL.md" in line
+    # Project id is resolved from the session -- never shown to the agent.
+    assert "proj-x" not in line
 
 
 def test_add_top_level_shortcut_no_longer_exists():

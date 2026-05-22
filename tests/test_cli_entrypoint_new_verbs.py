@@ -74,5 +74,9 @@ def test_set_mode_rejects_invalid_mode_string():
 
 
 def test_set_mode_rejects_wrong_argv_count():
-    return_code = _handle_set_mode(["only-one-arg"])
+    # set-mode takes exactly one arg (the mode); the project is resolved, not passed.
+    # Here the project is given explicitly (it names a real project) plus too many
+    # trailing args -> usage error.
+    _handle_init_and_register(["sess-count", "/x"])
+    return_code = _handle_set_mode(["sess-count", "live", "extra"])
     assert return_code == 2

@@ -1,21 +1,29 @@
 """Single CLI dispatcher: `source-of-truth <verb>` for ALL operations.
 
-Setup verbs:
+Runtime verbs take NO project id -- the project is resolved from the current
+session (CLAUDE_CODE_SESSION_ID). If the session isn't part of a project the
+command errors. (An undocumented `--project <id>` override exists for portability.)
+
+Setup verbs (these establish the session<->project link, so they DO take ids):
   init-project              <project_id>
   init-and-register         <session_id> <conversation_path>
   add-session               <project_id> <session_id> <conversation_path>
-  set-mode                  <project_id> <live|none|deferred>
 
-Runtime verbs (the agent calls these):
-  submit-change-set         <project_id> --add-top-level <raw_input_id>
-  submit-change-set         <project_id> @path/to/changeset.json
-  submit-change-set         <project_id> -                  (read JSON from stdin)
-  show-tree                 <project_id>
-  get-node                  <project_id> <node_id>
-  search-nodes              <project_id> <query>
-  flush-deferred            <project_id>
-  add-path                  <project_id> <filesystem_path>
-  show-top-level            <project_id>
+Runtime verbs (the agent calls these; project comes from the session):
+  set-mode                  <live|none|deferred>
+  submit-change-set         --add <raw_input_id> --parent <pid_or_letter> --title "<leaf>" [--new-group "<group>"]
+  submit-change-set         --add-group --parent <pid_or_letter> --title "<group>"
+  submit-change-set         @path/to/changeset.json   |   -   (read JSON from stdin)
+  show-tree                 [--show-all]
+  read                      <node_id> [<node_id> ...]
+  search-nodes              <query>
+  pretext                   <node_id> <start> <end> | --all | --none
+  flush-deferred
+  add-path                  <filesystem_path>
+  show-top-level
+
+The single top-level is the project itself; every requirement is a node under it
+(use a parent node/group letter id, or "0" only when no fitting parent exists).
 
 Hook entry-point:
   user-prompt-submit-hook   reads JSON from stdin, runs raw log writer,
@@ -36,6 +44,7 @@ from .load_config import (
     ALL_VALID_REVIEWER_MODES,
     ensure_root_directories_exist,
     load_project_settings,
+    project_directory_for,
     project_pending_pre_text_file_path,
     save_project_settings,
 )
@@ -51,14 +60,17 @@ from .requirements_tree_store import (
 
 
 def _build_per_turn_additional_context_line(project_id: str, raw_input_id: int) -> str:
-    """One-line action-shaped block injected on every user prompt."""
+    """One-line action-shaped block injected on every user prompt.
+
+    Commands take no project id -- it is resolved from the current session.
+    """
     return (
         f"source-of-truth: prompt logged id:{raw_input_id}, "
         f"add as requirement: build add-op JSON with raw_input_id={raw_input_id}, "
         f"<parent_id> (use '0' for top-level or a node id like '12' or 'a'), "
         f"<short_neutral_title> (1-50 chars; a noun-phrase TOPIC like \"vendor placement\" -- NOT a sentence/rule), "
-        f"submit via source-of-truth submit-change-set {project_id} '<json>', "
-        f"view project requirements: source-of-truth show-tree {project_id}, "
+        f"submit via: source-of-truth submit-change-set --add {raw_input_id} --parent <parent> --title \"<subject>\", "
+        f"view: source-of-truth show-tree, "
         f"read SKILL.md for more"
     )
 
@@ -173,24 +185,27 @@ def _handle_init_and_register(argv: list[str]) -> int:
 
 
 def _handle_set_mode(argv: list[str]) -> int:
-    if len(argv) != 2:
+    project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+    if len(rest) != 1:
         print(
-            f"Usage: source-of-truth set-mode <project_id> <{'|'.join(ALL_VALID_REVIEWER_MODES)}>",
+            f"Usage: source-of-truth set-mode <{'|'.join(ALL_VALID_REVIEWER_MODES)}>",
             file=sys.stderr,
         )
         return 2
-    project_id, requested_mode = argv
+    requested_mode = rest[0]
     if requested_mode not in ALL_VALID_REVIEWER_MODES:
         print(
-            f"Invalid mode {requested_mode!r}. "
-            f"Valid: {', '.join(ALL_VALID_REVIEWER_MODES)}",
+            f"Invalid mode {requested_mode!r}. Valid: {', '.join(ALL_VALID_REVIEWER_MODES)}",
             file=sys.stderr,
         )
         return 2
     settings = load_project_settings(project_id)
     settings.reviewer_mode_override = requested_mode
     save_project_settings(settings)
-    print(f"project_id={project_id} reviewer_mode_override set to '{requested_mode}'")
+    print(f"reviewer_mode_override set to '{requested_mode}'")
     return 0
 
 
@@ -333,9 +348,13 @@ def _resolve_change_set_payload_from_argv_after_project_id(
 
 
 def _handle_submit_change_set(argv: list[str]) -> int:
-    if len(argv) < 2:
+    project_id, payload_args, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+    if len(payload_args) < 1:
         print(
-            "Usage: source-of-truth submit-change-set <project_id> "
+            "Usage: source-of-truth submit-change-set "
             "[--add <rid> --parent <pid> --title \"...\" --new-group \"...\" "
             "| --add <rid> --parent <pid> --title \"...\" "
             "| --add-group --parent <pid> --title \"...\" "
@@ -343,8 +362,6 @@ def _handle_submit_change_set(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 2
-    project_id = argv[0]
-    payload_args = argv[1:]
     try:
         change_set_dict = _resolve_change_set_payload_from_argv_after_project_id(
             payload_args, project_id_for_combo_letter_lookup=project_id,
@@ -366,17 +383,17 @@ def _handle_submit_change_set(argv: list[str]) -> int:
 
 
 def _handle_show_tree(argv: list[str]) -> int:
-    if len(argv) < 1 or len(argv) > 2:
-        print(
-            "Usage: source-of-truth show-tree <project_id> [--show-all]",
-            file=sys.stderr,
-        )
+    project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+    if len(rest) > 1:
+        print("Usage: source-of-truth show-tree [--show-all]", file=sys.stderr)
         return 2
-    project_id = argv[0]
-    show_all_flag_present = len(argv) == 2 and argv[1] == "--show-all"
-    if len(argv) == 2 and not show_all_flag_present:
+    show_all_flag_present = len(rest) == 1 and rest[0] == "--show-all"
+    if len(rest) == 1 and not show_all_flag_present:
         print(
-            f"Unknown flag: {argv[1]!r}. Only --show-all is supported.",
+            f"Unknown flag: {rest[0]!r}. Only --show-all is supported.",
             file=sys.stderr,
         )
         return 2
@@ -389,25 +406,48 @@ def _handle_show_tree(argv: list[str]) -> int:
     return 0
 
 
-def _resolve_active_project_id_or_error(explicit_project_id: "str | None") -> "tuple[str | None, str | None]":
-    """Resolve which project a runtime verb operates on.
+_NOT_IN_PROJECT_ERROR = "You must be part of a source-of-truth project to use this command."
 
-    Project is implicit: derived from the current session via
-    CLAUDE_CODE_SESSION_ID -> resolve_project_id_for_session. An explicit id may
-    be passed (kept for portability to other agent platforms; omitted from help).
-    Returns (project_id, error_message); error_message is set when the session
-    is not enrolled in any project.
+
+def _resolve_project_and_remaining_args(
+    args: list[str],
+) -> "tuple[str | None, list[str], str | None]":
+    """Resolve which project a runtime verb operates on, WITHOUT the agent ever
+    passing a project id.
+
+    Resolution order:
+      1. an explicit, UNDOCUMENTED override (`--project <id>`, or a leading
+         positional that names an existing project on disk) — for portability;
+      2. otherwise the current session via CLAUDE_CODE_SESSION_ID.
+    Returns (project_id, remaining_args, error_message). error_message is set
+    (and project_id is None) when the session is not part of any project.
     """
-    if explicit_project_id:
-        return explicit_project_id, None
+    args = list(args)
+    explicit_project_id: "str | None" = None
+
+    if "--project" in args:
+        flag_index = args.index("--project")
+        if flag_index + 1 < len(args):
+            explicit_project_id = args[flag_index + 1]
+            del args[flag_index : flag_index + 2]
+
+    if (
+        explicit_project_id is None
+        and args
+        and not args[0].startswith("-")
+        and project_directory_for(args[0]).is_dir()
+    ):
+        explicit_project_id = args[0]
+        args = args[1:]
+
+    if explicit_project_id is not None:
+        return explicit_project_id, args, None
+
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     project_id = resolve_project_id_for_session(session_id) if session_id else None
     if project_id is None:
-        return None, (
-            "This session is not a member of a source-of-truth project. "
-            "Onboard it first (init-and-register, or add-session into an existing project)."
-        )
-    return project_id, None
+        return None, args, _NOT_IN_PROJECT_ERROR
+    return project_id, args, None
 
 
 _PRETEXT_TOOL_REMINDER_LINE = (
@@ -444,14 +484,14 @@ def _attach_numbered_pre_text_to_node_payload(project_id: str, node_payload: dic
 
 def _handle_read(argv: list[str]) -> int:
     """Read one or more nodes by id; mixed quote-leaf ids (e.g. "12") and group letter ids (e.g. "a")."""
-    if len(argv) < 2:
-        print(
-            "Usage: source-of-truth read <project_id> <node_id> [<node_id> ...]",
-            file=sys.stderr,
-        )
+    project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+    if len(rest) < 1:
+        print("Usage: source-of-truth read <node_id> [<node_id> ...]", file=sys.stderr)
         return 2
-    project_id = argv[0]
-    requested_node_ids = argv[1:]
+    requested_node_ids = rest
     api = RequirementsTreeControlledApi(project_id, ClaudeCodeAdapter())
     payload_per_node: list[dict] = []
     any_id_failed = False
@@ -483,20 +523,27 @@ _handle_get_node = _handle_read
 
 
 def _handle_search_nodes(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("Usage: source-of-truth search-nodes <project_id> <query>", file=sys.stderr)
+    project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+    if len(rest) != 1:
+        print("Usage: source-of-truth search-nodes <query>", file=sys.stderr)
         return 2
-    project_id, query = argv
+    query = rest[0]
     api = RequirementsTreeControlledApi(project_id, ClaudeCodeAdapter())
     print(json.dumps(api.search_requirements_nodes(query), indent=2))
     return 0
 
 
 def _handle_flush_deferred(argv: list[str]) -> int:
-    if len(argv) != 1:
-        print("Usage: source-of-truth flush-deferred <project_id>", file=sys.stderr)
+    project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+    if rest:
+        print("Usage: source-of-truth flush-deferred", file=sys.stderr)
         return 2
-    project_id = argv[0]
     api = RequirementsTreeControlledApi(project_id, ClaudeCodeAdapter())
     result = api.flush_deferred_change_sets_for_review()
     print(json.dumps({
@@ -509,10 +556,14 @@ def _handle_flush_deferred(argv: list[str]) -> int:
 
 
 def _handle_add_path(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("Usage: source-of-truth add-path <project_id> <filesystem_path>", file=sys.stderr)
+    project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+    if len(rest) != 1:
+        print("Usage: source-of-truth add-path <filesystem_path>", file=sys.stderr)
         return 2
-    project_id, filesystem_path = argv
+    filesystem_path = rest[0]
     api = RequirementsTreeControlledApi(project_id, ClaudeCodeAdapter())
     was_added = api.add_project_path(filesystem_path)
     print("added" if was_added else "already_present")
@@ -520,10 +571,14 @@ def _handle_add_path(argv: list[str]) -> int:
 
 
 def _handle_show_top_level(argv: list[str]) -> int:
-    if len(argv) != 1:
-        print("Usage: source-of-truth show-top-level <project_id>", file=sys.stderr)
+    project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+    if rest:
+        print("Usage: source-of-truth show-top-level", file=sys.stderr)
         return 2
-    print(build_top_level_injection_text_for_project(argv[0]))
+    print(build_top_level_injection_text_for_project(project_id))
     return 0
 
 
@@ -534,15 +589,10 @@ def _handle_pretext(argv: list[str]) -> int:
     Project is resolved from the current session (CLAUDE_CODE_SESSION_ID); an
     optional `--project <id>` override exists for portability (not shown in help).
     """
-    tokens = list(argv)
-    explicit_project_id = None
-    if "--project" in tokens:
-        flag_index = tokens.index("--project")
-        if flag_index + 1 >= len(tokens):
-            print("--project needs a value", file=sys.stderr)
-            return 2
-        explicit_project_id = tokens[flag_index + 1]
-        del tokens[flag_index : flag_index + 2]
+    project_id, tokens, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
 
     usage = "Usage: source-of-truth pretext <node_id> <start> <end> | --all | --none"
     if len(tokens) < 2:
@@ -563,11 +613,6 @@ def _handle_pretext(argv: list[str]) -> int:
     else:
         print(usage, file=sys.stderr)
         return 2
-
-    project_id, error_message = _resolve_active_project_id_or_error(explicit_project_id)
-    if error_message:
-        print(error_message, file=sys.stderr)
-        return 1
 
     tree = load_requirements_tree(project_id)
     node = tree.nodes_by_id.get(str(node_id))

@@ -61,8 +61,11 @@ def _render_node_line(
             f"{indent}[{node.node_id}] {raw_id_label}{children_label}: "
             f"{_shorten_to_one_line(quote_text, max_quote_chars)}"
         )
+    # Groups (and any node past the inlined depth): show the human title if present,
+    # falling back to the kind only when there's no title.
+    title_or_kind = node.short_neutral_title if node.short_neutral_title else node.kind
     children_label = f" (+{child_count} children)" if child_count else ""
-    return f"{indent}[{node.node_id}] {node.kind}{children_label}"
+    return f"{indent}[{node.node_id}] {title_or_kind}{children_label}"
 
 
 def render_tree_titles_only_indented(project_id: str, tree: RequirementsTree) -> str:

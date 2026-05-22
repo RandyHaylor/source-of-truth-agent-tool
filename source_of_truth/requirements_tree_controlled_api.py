@@ -101,6 +101,29 @@ class RequirementsTreeControlledApi:
         """Project override of the agent-guidance text if set, else global default."""
         return resolve_effective_global_settings(self._project_id).interaction_time_agent_guidance
 
+    def _resolve_cited_text_or_placeholder(self, node):
+        """The verbatim text a node cites (submission slice + its selected agent
+        pre-text), so `read` shows what was actually said -- not just a pointer.
+        None for non-quote nodes (groups / project-paths)."""
+        reference = node.raw_input_reference
+        if reference is None:
+            return None
+        from .raw_input_log_reader import (
+            CharRangeOutOfBoundsError,
+            RawLogEntryNotFoundError,
+            resolve_quote_text_from_reference,
+        )
+        char_range_tuple = tuple(reference.char_range) if reference.char_range is not None else None
+        try:
+            return resolve_quote_text_from_reference(
+                self._project_id,
+                reference.raw_input_id,
+                char_range_tuple,
+                reference.pre_text_line_range,
+            )
+        except (RawLogEntryNotFoundError, CharRangeOutOfBoundsError, ValueError) as exc:
+            return f"(resolve error: {exc})"
+
     # ----- Read endpoints -----
 
     def get_top_level_node(self) -> str:
@@ -115,6 +138,7 @@ class RequirementsTreeControlledApi:
             return None
         result: dict[str, Any] = {
             "node": node.to_json_dict(),
+            "cited_text": self._resolve_cited_text_or_placeholder(node),
             "agent_guidance": self._effective_interaction_guidance(),
         }
         if include_children:
@@ -146,7 +170,9 @@ class RequirementsTreeControlledApi:
             except Exception:
                 continue
             if query_lowered in quote_text.lower():
-                matches.append(node.to_json_dict())
+                match_payload = node.to_json_dict()
+                match_payload["cited_text"] = quote_text  # show WHAT matched, not just the pointer
+                matches.append(match_payload)
         return {"matches": matches, "agent_guidance": self._effective_interaction_guidance()}
 
     # ----- Mutating endpoints -----

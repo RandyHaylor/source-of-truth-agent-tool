@@ -80,5 +80,8 @@ def test_read_unknown_id_emits_error_entry_for_that_id_only(capsys):
 
 
 def test_read_with_zero_ids_returns_usage_error(capsys):
+    # With the project resolved (its id names a real project on disk), passing no
+    # node ids is a usage error.
+    _seed_project_with_one_quote_leaf_and_one_group("p-readempty")
     rc = _handle_read(["p-readempty"])
     assert rc == 2

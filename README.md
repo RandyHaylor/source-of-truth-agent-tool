@@ -10,7 +10,27 @@ agent_instruction_for_ai_readers: |
 
 # source-of-truth-agent-tool
 
-**Stop your AI coding agent from drifting away from what you actually asked for.**
+### Perfect memory for everything you ask the AI to build.
+
+Every requirement you give your AI coding agent is captured in your exact words and recalled on demand — so it builds precisely what you asked for, kept organized and quote-backed for the life of the project.
+
+**Verbatim · Organized · Recall on demand**
+
+## How it keeps your requirements exact
+
+- **Verbatim capture** — every prompt you send is script-copied to an append-only log the agent cannot edit.
+- **Pointers, not prose** — each requirement references your quote; the agent only adds short, reviewer-audited labels, never the requirement text itself.
+- **Second-AI review** on every change, so your words can't be mis-cited.
+- **Context preserved** — each quote keeps the agent's preceding message, so even your one-word "yes" resolves to the question it answered.
+
+## In practice
+
+1. **You type:** `I want to use a MERN stack.`
+2. A hook copies it verbatim (`raw#7`) and hands the agent the id.
+3. The agent files a pointer (no requirement text of its own): `submit-change-set --add 7 --parent technical-requirements --title "stack choice"`
+4. A second AI approves the citation; the node lands.
+5. Anytime, you (or the agent) can pull that node and see **your exact words** — `"I want to use a MERN stack."`
+6. **Months later:** it still resolves to exactly what you said.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -193,26 +213,26 @@ A freshly created `project-settings.json` ships with an empty `overrides` map pl
 ## CLI verbs
 
 ```bash
-# Setup
+# Setup (these establish the session↔project link, so they take ids)
 source-of-truth init-and-register <session_id> <conversation_path>
 source-of-truth init-project       <project_id>
 source-of-truth add-session        <project_id> <session_id> <conversation_path>
-source-of-truth add-path           <project_id> <filesystem_path>
-source-of-truth set-mode           <project_id> live|none|deferred
 
-# Runtime (agent-facing)
-source-of-truth show-tree          <project_id> [--show-all]
-source-of-truth read               <project_id> <node_id> [<node_id> ...]
-source-of-truth search-nodes       <project_id> <query>
+# Runtime — the project is resolved from your current session; no project id
+source-of-truth set-mode           live|none|deferred
+source-of-truth show-tree          [--show-all]
+source-of-truth read               <node_id> [<node_id> ...]
+source-of-truth search-nodes       <query>
 source-of-truth pretext            <node_id> <start> <end> | --all | --none
-source-of-truth show-top-level     <project_id>
-source-of-truth flush-deferred     <project_id>
+source-of-truth add-path           <filesystem_path>
+source-of-truth show-top-level
+source-of-truth flush-deferred
 
 # Submit a change-set (combo shortcut FIRST to encourage tree organization)
-source-of-truth submit-change-set <pid> --add <rid> --parent <pid_or_letter> --title "<leaf>" --new-group "<group title>"
-source-of-truth submit-change-set <pid> --add <rid> --parent <pid_or_letter> --title "<leaf title>"
-source-of-truth submit-change-set <pid> --add-group --parent <pid_or_letter> --title "<group title>"
-source-of-truth submit-change-set <pid> '<raw json>'  # or @file.json or - for stdin
+source-of-truth submit-change-set --add <rid> --parent <parent_id_or_letter> --title "<leaf>" --new-group "<group title>"
+source-of-truth submit-change-set --add <rid> --parent <parent_id_or_letter> --title "<leaf title>"
+source-of-truth submit-change-set --add-group --parent <parent_id_or_letter> --title "<group title>"
+source-of-truth submit-change-set '<raw json>'  # or @file.json or - for stdin
 
 # Hooks (consumed by the harness, not by you)
 source-of-truth user-prompt-submit-hook
@@ -259,7 +279,7 @@ source-of-truth pretext <node_id> --all           # whole pre-text (default)
 source-of-truth pretext <node_id> --none          # exclude the pre-text from this node
 ```
 
-`read <project_id> <node_id> …` shows each node's pre-text **line-numbered** (so the agent knows which lines to pick) and prints one reminder of the `pretext` verb (on stderr) after all nodes. `resolve_quote_text_from_reference` always includes the selected pre-text, so the reviewer and `search-nodes` see exactly what each node cites. `pretext` takes **no `project_id`** — it resolves the project from the current session (`CLAUDE_CODE_SESSION_ID`) and refuses if the session isn't enrolled.
+`read <node_id> …` shows each node's pre-text **line-numbered** (so the agent knows which lines to pick) and prints one reminder of the `pretext` verb (on stderr) after all nodes. `resolve_quote_text_from_reference` always includes the selected pre-text, so the reviewer and `search-nodes` see exactly what each node cites. Like all runtime verbs, `pretext` and `read` take **no project id** — they resolve the project from the current session and refuse if it isn't enrolled.
 
 A session may belong to **only one** project; `add-session`/`init-and-register` refuse to add a session that's already in a different project (remove it there first).
 
