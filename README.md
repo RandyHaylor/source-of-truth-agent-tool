@@ -134,27 +134,22 @@ cd source-of-truth-agent-tool
 
 # 2. Install. This copies the repo into ~/.claude/skills/source-of-truth-agent-tool/,
 #    writes the hook wrapper scripts (UserPromptSubmit / PostToolUse / Stop / etc.),
-#    patches ~/.claude/settings.json, and seeds ~/.source-of-truth/global-settings.json.
+#    patches ~/.claude/settings.json, deploys the `source-of-truth` command on your
+#    PATH (~/.local/bin), and seeds ~/.source-of-truth/global-settings.json.
 #    Reinstall is non-destructive: an existing install dir is moved to a backup, never deleted.
 python3 install.py
 
-# 3. (Optional) Drop a small wrapper on PATH so you can run `sot <verb>` anywhere.
-cat > ~/.local/bin/sot <<EOF
-#!/usr/bin/env bash
-exec python3 -c "import sys; sys.path.insert(0, '$HOME/.claude/skills/source-of-truth-agent-tool'); from source_of_truth.cli_entrypoint import _main; sys.exit(_main())" "\$@"
-EOF
-chmod +x ~/.local/bin/sot
-
-# 4. Open a new Claude Code session in your project, then in that session
+# 3. Open a new Claude Code session in your project, then in that session
 #    register it as a source-of-truth project. Find the session id from
 #    ~/.claude/projects/<encoded-cwd>/<session_id>.jsonl or from the UI.
-sot init-and-register <your_session_id> ~/.claude/projects/<encoded-cwd>/<your_session_id>.jsonl
+source-of-truth init-and-register <your_session_id> ~/.claude/projects/<encoded-cwd>/<your_session_id>.jsonl
 
-# 5. Pick a reviewer mode. Default is "live" (every submit gets reviewed).
-sot set-mode <your_session_id> live    # or: none, deferred
+# 4. Pick a reviewer mode. Default is "live" (every submit gets reviewed).
+#    Runtime verbs take no session/project id -- they resolve it from your session.
+source-of-truth set-mode live    # or: none, deferred
 ```
 
-If you'd rather skip the wrapper script, you can also clone directly into `~/.claude/skills/source-of-truth-agent-tool/` and run `python3 install.py` from there — install.py detects the case and skips the copy step.
+You can also clone directly into `~/.claude/skills/source-of-truth-agent-tool/` and run `python3 install.py` from there — install.py detects the case and skips the copy step. If `source-of-truth` isn't found after install, add `~/.local/bin` to your PATH.
 
 With install.py done, every user prompt in any registered session is auto-logged and any reviewer outcome messages auto-surface to you via Claude Code's `systemMessage`.
 
@@ -182,7 +177,7 @@ print(result.approved, result.reviewer_message)
 
 ## Reviewer modes
 
-Set via `reviewer_mode` in `~/.source-of-truth/global-settings.json` or `reviewer_mode_override` in any project's `project-settings.json` (use `sot set-mode`).
+Set via `reviewer_mode` in `~/.source-of-truth/global-settings.json` or `reviewer_mode_override` in any project's `project-settings.json` (use `source-of-truth set-mode`).
 
 | Mode | Behavior | Use when |
 |------|---------|----------|
@@ -201,7 +196,7 @@ Set via `reviewer_model_name` in `global-settings.json` or `reviewer_model_name_
 Every global setting can be overridden per project. Resolution is always **project → global**: a project value wins if present, otherwise the global default is used.
 
 Two ways to set a per-project override:
-- The dedicated reviewer fields `reviewer_mode_override` / `reviewer_model_name_override` (written by `sot set-mode`, etc.).
+- The dedicated reviewer fields `reviewer_mode_override` / `reviewer_model_name_override` (written by `source-of-truth set-mode`, etc.).
 - A generic `overrides` map in the project's `project-settings.json`, keyed by the **exact** global setting name. Example:
   ```json
   "overrides": {
