@@ -16,6 +16,8 @@ Every requirement you give your AI coding agent is captured in your exact words 
 
 **Verbatim · Organized · Recall on demand**
 
+> **Developers:** see [`ARCHITECTURE.md`](ARCHITECTURE.md) for the module map, data flow, configuration model, and extension points.
+
 ## How it keeps your requirements exact
 
 - **Verbatim capture** — every prompt you send is script-copied to an append-only log the agent cannot edit.
@@ -334,7 +336,7 @@ Op rules:
 
 ## Status
 
-146 unit tests passing. Live haiku reviewer round-trip verified end-to-end with single-op, two-op, and four-call sequential tests. Hooks installed and self-gating verified across registered/unregistered/missing-package/malformed-input cases.
+149 unit tests passing. Live haiku reviewer round-trip verified end-to-end with single-op, two-op, and four-call sequential tests. Hooks installed and self-gating verified across registered/unregistered/missing-package/malformed-input cases.
 
 Schema highlights as of the latest refactor:
 - Node ids are strings: `"1"`, `"2"`, … for quote leaves; `"a"`, `"b"`, …, `"aa"` for groups.
