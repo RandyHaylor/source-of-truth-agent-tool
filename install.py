@@ -196,14 +196,15 @@ def back_up_existing_install_dir_by_moving_it(install_dir):
 def copy_repo_contents_into_install_dir(repo_dir, install_dir):
     """Deploy the repo into the install dir.
 
-    Skips .git/, __pycache__/, *.pyc, and any *.bak* settings backups that
-    might happen to be under the repo (defensive). Any existing install dir is
-    NOT deleted -- it is moved to a timestamped backup first (so renamed/removed
-    files don't linger AND nothing is ever destroyed), then the repo is copied
-    in fresh.
+    Skips .git/, .claude/, __pycache__/, *.pyc, and any *.bak* settings backups
+    that might happen to be under the repo (defensive). .claude/ is session-local
+    Claude Code state (settings, plans, hooks) -- never part of the deployable
+    tool. Any existing install dir is NOT deleted -- it is moved to a timestamped
+    backup first (so renamed/removed files don't linger AND nothing is ever
+    destroyed), then the repo is copied in fresh.
     """
     ignore_patterns_callable = shutil.ignore_patterns(
-        ".git", "__pycache__", "*.pyc", "*.bak.*",
+        ".git", ".claude", "__pycache__", "*.pyc", "*.bak.*",
     )
     backup_dir = back_up_existing_install_dir_by_moving_it(install_dir)
     if backup_dir:
