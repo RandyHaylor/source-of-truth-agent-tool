@@ -51,26 +51,55 @@ from .conversation_context_injector import build_top_level_injection_text_for_pr
 from .project_identifier_resolver import resolve_project_id_for_session
 from .raw_input_log_writer import append_submission_to_raw_input_log
 from .requirements_tree_controlled_api import RequirementsTreeControlledApi
-from .requirements_tree_node_schema import RequirementsTree
+from .requirements_tree_node_schema import (
+    GROUP_NODE_KIND,
+    PENDING_INSTRUCTIONS_GROUP_TITLE,
+    RequirementsTree,
+)
 from .requirements_tree_store import (
     load_requirements_tree,
     save_requirements_tree_atomically,
 )
 
 
+def _find_group_id_by_title(project_id: str, group_title: str) -> "str | None":
+    """Return the node id of the (first) group node with this title, or None.
+
+    Best-effort: any load problem returns None so the per-turn guidance still
+    renders (it just falls back to a 'run show-tree' hint for the id).
+    """
+    try:
+        tree = load_requirements_tree(project_id)
+    except Exception:
+        return None
+    for node in tree.nodes_by_id.values():
+        if node.kind == GROUP_NODE_KIND and node.short_neutral_title == group_title:
+            return node.node_id
+    return None
+
+
 def _build_per_turn_additional_context_line(project_id: str, raw_input_id: int) -> str:
-    """One-line action-shaped block injected on every user prompt.
+    """Action-shaped guidance injected on every user prompt.
+
+    The headline rule is MUST-CAPTURE: any explicit instruction, decision, or
+    answer to an agent's question is a requirement and has to be stored under the
+    pending-instructions group (later reparented to completed-/deprecated-).
 
     Commands take no project id -- it is resolved from the current session.
     """
+    pending_id = _find_group_id_by_title(project_id, PENDING_INSTRUCTIONS_GROUP_TITLE)
+    pending_parent = pending_id if pending_id is not None else "<pending-instructions id; run show-tree>"
     return (
-        f"source-of-truth: prompt logged id:{raw_input_id}, "
-        f"add as requirement: build add-op JSON with raw_input_id={raw_input_id}, "
-        f"<parent_id> (use '0' for top-level or a node id like '12' or 'a'), "
-        f"<short_neutral_title> (1-50 chars; a noun-phrase TOPIC like \"vendor placement\" -- NOT a sentence/rule), "
-        f"submit via: source-of-truth submit-change-set --add {raw_input_id} --parent <parent> --title \"<subject>\", "
-        f"view: source-of-truth show-tree, "
-        f"read SKILL.md for more"
+        f"source-of-truth: prompt logged id:{raw_input_id}. "
+        f"MUST-CAPTURE -- if this prompt is an instruction, decision, or answer to an "
+        f"agent's requirement/task question (e.g. 'do X', 'use library Y', 'make it blue', "
+        f"'yes', 'option B'), it IS a requirement: store it under pending-instructions before "
+        f"acting on it: "
+        f"source-of-truth submit-change-set --add {raw_input_id} --parent {pending_parent} "
+        f"--title \"<noun-phrase TOPIC, 1-50 chars, NOT a sentence>\". "
+        f"Move it to completed-instructions / deprecated-instructions (reparent op) when done or dropped. "
+        f"Other content: file under the best-fit group (parent = a group letter id, or '0' for top-level). "
+        f"view: source-of-truth show-tree, read SKILL.md for more"
     )
 
 

@@ -24,10 +24,19 @@ Goal: take the user from *hooks installed* → *project registered, mode picked,
 - `pretext <node_id> <start> <end> | --all | --none` → trim a node's pre-text.
 - Payoff: requirements stay **verbatim, incorruptible, organized**.
 
+## MUST-CAPTURE rule
+
+Any prompt that is an **explicit instruction, decision, or answer** is a requirement and MUST be stored — *before* you act on it. This includes:
+- direct commands ("do X", "add Y", "remove Z")
+- dependency/choice statements ("use library Y", "make it blue", "put it top-right")
+- answers to a question you asked ("yes", "no", "option B")
+
+File these under the **`pending-instructions`** group. When an instruction is carried out, reparent it to **`completed-instructions`**; when it's dropped/superseded, reparent it to **`deprecated-instructions`**. Capturing is not optional and not deferred until after the task — store first, then do the work.
+
 ## Expected workflow (each user turn)
 
 1. The user sends a prompt; it's auto-logged and you receive its `raw_input_id` in your turn context.
-2. File it under the fitting group: `submit-change-set --add <raw_input_id> --parent <group> --title "<subject>"`
+2. If it's an instruction/decision/answer, file it under `pending-instructions`; otherwise file it under the fitting group: `submit-change-set --add <raw_input_id> --parent <group> --title "<subject>"`
 3. The reviewer approves (or rejects with a reason — fix and resubmit).
 4. `read <node_id>` → the verbatim quote + line-numbered pre-text.
 5. Trim if noisy: `pretext <node_id> <start> <end> | --all | --none`.
@@ -42,7 +51,7 @@ Do NOT dump all instructions at once. Walk the user step by step. After each ste
 
 ## After setup — capture model
 
-- **Pre-text is auto-captured.** A `Stop` hook records your prior turn (assistant text + tool-result summaries); a `UserPromptSubmit` hook stores it as the next entry's `pre_submission_content`.
+- **Pre-text is auto-captured.** On each prompt the `UserPromptSubmit` hook reads the session transcript, extracts your prior turn (assistant text + tool-result summaries) — including a partial turn you interrupted/canceled — and stores it as the next entry's `pre_submission_content`.
   - So a brief reply (`yes`, `option B`) is a complete requirement — the pre-text already holds the question/plan. Don't restate it.
 - **Pre-text defaults to whole.** `read` shows it line-numbered; narrow if noisy: `pretext <node_id> <start> <end>` (those lines) · `--all` (whole) · `--none` (drop).
 
@@ -50,7 +59,7 @@ Capture via the on-PATH `source-of-truth` wrapper. Three rules:
 
 1. **Every node has a parent.** `parent_id` is required on every `add` op. Use `"0"` for top-level only when no appropriate parent exists. Prefer organizing under a group node (letter id like `a`, `b`, `aa`).
 2. **Every node has a title.** `short_neutral_title` is required, 1–50 chars, the SUBJECT of the requirement (not the spec). The reviewer will rewrite (via `amended_short_title`) if a title overreaches the cited slice; ops aren't rejected for that.
-3. **Group nodes organize the tree.** `add_group` op (or the combo shortcut) creates a group with auto-allocated letter id. New projects start **pre-scaffolded** with four top-level groups — `resources` (links/paths/docs the user supplies), `user-interaction-preferences`, `technical-requirements`, `current-project-documentation` — so file new nodes under the fitting one (add more groups as needed).
+3. **Group nodes organize the tree.** `add_group` op (or the combo shortcut) creates a group with auto-allocated letter id. New projects start **pre-scaffolded** with seven top-level groups — `resources` (links/paths/docs the user supplies), `user-interaction-preferences`, `technical-requirements`, `current-project-documentation`, and the instruction-lifecycle groups `pending-instructions`, `completed-instructions`, `deprecated-instructions` — so file new nodes under the fitting one (add more groups as needed).
 
 `submit-change-set` shortcuts (promotion order):
 

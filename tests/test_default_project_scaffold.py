@@ -13,7 +13,7 @@ from source_of_truth.requirements_tree_store import load_requirements_tree
 def test_scaffolded_tree_has_default_groups_as_text_less_categories():
     tree = RequirementsTree.scaffolded_for_new_project("p-scaffold")
     top_ids = tree.list_top_level_node_ids()
-    assert top_ids == ["a", "b", "c", "d"]
+    assert top_ids == ["a", "b", "c", "d", "e", "f", "g"]
     assert [tree.nodes_by_id[nid].short_neutral_title for nid in top_ids] == list(
         DEFAULT_PROJECT_SCAFFOLD_GROUP_TITLES
     )

@@ -15,7 +15,16 @@ DEFAULT_PROJECT_SCAFFOLD_GROUP_TITLES: tuple[str, ...] = (
     "user-interaction-preferences",
     "technical-requirements",
     "current-project-documentation",
+    # Instruction lifecycle: every explicit user instruction/decision/answer is
+    # filed under pending-instructions, then moved (reparented) to completed- or
+    # deprecated-instructions once it is done or no longer applies.
+    "pending-instructions",
+    "completed-instructions",
+    "deprecated-instructions",
 )
+
+# The group new explicit instructions/decisions/answers MUST be filed under.
+PENDING_INSTRUCTIONS_GROUP_TITLE: str = "pending-instructions"
 
 
 @dataclass
