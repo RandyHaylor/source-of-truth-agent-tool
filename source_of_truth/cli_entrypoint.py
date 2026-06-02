@@ -45,7 +45,6 @@ from .load_config import (
     ensure_root_directories_exist,
     load_project_settings,
     project_directory_for,
-    project_pending_pre_text_file_path,
     save_project_settings,
 )
 from .conversation_context_injector import build_top_level_injection_text_for_project
@@ -75,19 +74,29 @@ def _build_per_turn_additional_context_line(project_id: str, raw_input_id: int) 
     )
 
 
-def _read_and_consume_pending_pre_text(project_id: str, session_id: str) -> str:
-    """Return the Stop-hook-captured pre-text for this session, then delete it
-    (consume-once) so it is never reused for a later prompt. Empty if none."""
-    pending_file = project_pending_pre_text_file_path(project_id, session_id)
-    try:
-        text = pending_file.read_text()
-    except OSError:
+def _extract_pre_text_from_transcript_for_prompt(
+    transcript_path: "str | None", incoming_prompt_text: str
+) -> str:
+    """Pre-text = the agent's preceding turn, read directly from the session
+    transcript at UserPromptSubmit time. Replaces the old Stop-hook handoff,
+    which silently lost pre-text whenever the user interrupted a turn (no Stop
+    event fires on cancel). Best-effort: returns "" on any problem."""
+    if not transcript_path:
+        return ""
+    from pathlib import Path
+
+    from . import claude_cli_get_recent_agent_messages as extractor
+
+    transcript_file = Path(transcript_path)
+    if not transcript_file.exists():
         return ""
     try:
-        pending_file.unlink()
-    except OSError:
-        pass
-    return text
+        events = list(extractor.parse_events(transcript_file))
+        return extractor.build_pre_text_for_incoming_user_prompt(
+            events, incoming_prompt_text
+        )
+    except Exception:
+        return ""
 
 
 def _handle_user_prompt_submit_hook() -> int:
@@ -106,15 +115,19 @@ def _handle_user_prompt_submit_hook() -> int:
         or hook_input.get("userPrompt")
         or ""
     )
+    transcript_path = hook_input.get("transcript_path") or hook_input.get("transcriptPath")
 
     project_id = resolve_project_id_for_session(session_id)
     if project_id is None:
         print(json.dumps({}))
         return 0
 
-    # Pre-text = the agent output captured by the Stop hook after the PREVIOUS
-    # turn (text + tool results). Consume-once so it is never reused later.
-    prior_assistant_output_text = _read_and_consume_pending_pre_text(project_id, session_id)
+    # Pre-text = the agent's preceding turn, read straight from the transcript
+    # (text + tool results). Done here in UserPromptSubmit -- which fires on every
+    # prompt -- so an interrupted/canceled turn (no Stop event) no longer drops it.
+    prior_assistant_output_text = _extract_pre_text_from_transcript_for_prompt(
+        transcript_path, submission_text
+    )
 
     log_result = append_submission_to_raw_input_log(
         project_id=project_id,

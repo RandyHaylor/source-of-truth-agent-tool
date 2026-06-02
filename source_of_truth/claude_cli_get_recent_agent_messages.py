@@ -3,8 +3,10 @@
 claude_cli_get_recent_agent_messages.py
 ========================================
 
-A Claude Code Stop-hook handler that extracts the assistant's text replies
-emitted since the most recent user message in the session transcript.
+A Claude Code transcript extractor for the assistant's text replies emitted
+since the most recent user message. Used by the UserPromptSubmit hook (via
+build_pre_text_for_incoming_user_prompt) to capture the preceding turn's output
+as the next entry's pre-text. Also runnable standalone as a CLI (see below).
 
 This is a READ-ONLY extractor. It produces output on stdout. It does NOT
 make decisions about Claude's flow (no block/continue signaling). Pipe its
@@ -393,6 +395,70 @@ def build_recent_agent_text_from_relevant_events(
     if max_chars is not None and max_chars >= 0:
         output_text = output_text[-max_chars:]
     return output_text
+
+
+def _genuine_user_prompt_text(event: dict) -> str:
+    """The plain text of a genuine user-prompt event (content is a string, or a
+    list of text blocks). Used to tell whether an incoming prompt has already
+    been appended to the transcript."""
+    content = event.get("message", {}).get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(part for part in parts if part)
+    return ""
+
+
+def build_pre_text_for_incoming_user_prompt(
+    events: list[dict],
+    incoming_prompt_text: str,
+    include_tool_results: bool = True,
+    separator: str = "\n\n",
+    max_chars: "int | None" = None,
+) -> str:
+    """Return the agent's output for the turn IMMEDIATELY PRECEDING an incoming
+    user prompt, read straight from the transcript at UserPromptSubmit time.
+
+    This replaces the old Stop-hook handoff: the Stop event never fires when the
+    user interrupts/cancels a turn, so a Stop-based capture silently dropped the
+    pre-text for those turns. UserPromptSubmit fires on EVERY prompt, so reading
+    the transcript here captures the preceding turn (including its partial output
+    when interrupted) every time.
+
+    Robust to hook timing -- i.e. whether the incoming prompt has already been
+    appended to the transcript when this runs:
+      * if the LAST genuine user prompt equals the incoming prompt, the preceding
+        turn is the span BETWEEN the two most recent genuine user prompts;
+      * otherwise (incoming prompt not yet written) it is everything AFTER the
+        last genuine user prompt.
+    Returns "" when there is no preceding agent turn (e.g. the first prompt)."""
+    genuine_indices = [i for i, event in enumerate(events) if _is_genuine_user_prompt(event)]
+    if not genuine_indices:
+        return ""
+    last_index = genuine_indices[-1]
+    incoming_already_appended = (
+        _genuine_user_prompt_text(events[last_index]).strip()
+        == (incoming_prompt_text or "").strip()
+    )
+    if incoming_already_appended:
+        if len(genuine_indices) < 2:
+            return ""  # the incoming prompt is the very first; no preceding turn
+        preceding_turn_events = events[genuine_indices[-2] + 1 : last_index]
+    else:
+        preceding_turn_events = events[last_index + 1 :]
+    return build_recent_agent_text_from_relevant_events(
+        preceding_turn_events,
+        include_tool_calls=False,   # the CALL is noise; the RESULT is the signal
+        include_tool_results=include_tool_results,
+        separator=separator,
+        max_chars=max_chars,
+    )
 
 
 def emit_text(

@@ -63,8 +63,9 @@ that is bounded (1–50 chars) and reviewer-audited.
                               │  → new tree → atomic save under lock  │
                               └──────────────────────────────────────┘
 
-  end of turn ────▶ Stop hook: capture this turn's agent output →
-                    pending pre-text file → becomes NEXT prompt's pre-text
+  next prompt ───▶ UserPromptSubmit reads the transcript and captures the
+                   PRECEDING turn's agent output as this entry's pre-text
+                   (works even if the previous turn was interrupted)
 ```
 
 ---
@@ -84,8 +85,7 @@ Grouped by responsibility. Each is a single-purpose module in `source_of_truth/`
 |---|---|
 | `raw_input_log_writer.py` | Append one entry (verbatim submission + truncated pre-text) to the rolling raw log. |
 | `raw_input_log_entry_schema.py` | Dataclass + JSON schema for a single raw entry (`raw_input_id`, `timestamp_iso`, `submission_text`, `pre_submission_content`). |
-| `stop_hook_capture_agent_output.py` | Stop-hook handler: capture this turn's agent output as the *next* prompt's pre-text. Self-gates on project membership. |
-| `claude_cli_get_recent_agent_messages.py` | Extract assistant text since the last user prompt (incl. tool-result summaries, excl. tool calls) from the session transcript. Shared by the Stop hook and the CLI. |
+| `claude_cli_get_recent_agent_messages.py` | Extract the preceding turn's assistant text (incl. tool-result summaries, excl. tool calls) from the session transcript. `build_pre_text_for_incoming_user_prompt()` is what `UserPromptSubmit` calls to capture pre-text — robust to whether the new prompt is already appended to the transcript. (No Stop hook: it never fires on an interrupted turn.) |
 
 ### Read path (resolve quotes — agent-readable)
 | Module | Responsibility |
@@ -187,8 +187,7 @@ injection-blurb templates.
         ├── project-<project_id>-source-of-truth.json   # the requirements tree (sole writer = store)
         ├── raw_input_log.json                   # append-only verbatim quotes (agent: read-only)
         ├── reviewer_thinking.log                # reviewer's streamed NDJSON
-        ├── deferred_change_sets_queue.json      # pending submits (deferred mode)
-        └── pending_pre_text_for_session_<sid>.txt   # Stop-hook handoff to next prompt
+        └── deferred_change_sets_queue.json      # pending submits (deferred mode)
 ```
 
 ---
@@ -217,10 +216,11 @@ silently if the current session isn't a member of any project):
 
 | Event | Script | Purpose |
 |---|---|---|
-| `UserPromptSubmit` | `user_prompt_submit_hook.py` | Capture the prompt verbatim, attach pending pre-text, inject the per-turn context line. |
-| `Stop` | `stop_capture_agent_output_hook.py` | Capture this turn's agent output as the next prompt's pre-text. |
+| `UserPromptSubmit` | `user_prompt_submit_hook.py` | Capture the prompt verbatim; capture the preceding turn's agent output as pre-text by reading the transcript; inject the per-turn context line. |
 | `PostToolUse` (Bash) | `post_tool_use_hook.py` | Drain pending user-facing messages to this session's project. |
 | `PostToolUse` (*) | `what_is_session_id_hook.py` | Sentinel hook resolving the current session id. |
+
+(There is intentionally **no `Stop` hook** — it never fires on an interrupted turn, which dropped pre-text. Capture lives in `UserPromptSubmit`, which fires on every prompt.)
 
 Hook wrapper scripts are generated into the install dir by `install.py`, which
 also patches `settings.json` (dedup + stale-entry scrubbing) and deploys the

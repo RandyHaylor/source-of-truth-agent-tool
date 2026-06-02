@@ -256,15 +256,15 @@ python3 uninstall.py
 
 Removes the on-PATH `source-of-truth` stub and scrubs the matching hook entries from `settings.json`. It deliberately does **not** delete `~/.claude/skills/source-of-truth-agent-tool/` (it may be an in-place clone) — remove that folder manually for a full uninstall. Your captured raw input logs, requirements trees, and global settings under `~/.source-of-truth/` are NOT touched.
 
-## Agent pre-text capture (Stop hook)
+## Agent pre-text capture (UserPromptSubmit)
 
 Each raw-input log entry stores `pre_submission_content`: the agent's output from the **previous** turn. This is what lets a one-word reply (`yes`, `option B`) be captured as a requirement — the pre-text carries the question/plan the user was responding to, so a node citing that short answer still resolves to meaningful context for the reviewer.
 
-How it's populated (installed by `install.py`):
-1. A **`Stop` hook** (`stop_hook_capture_agent_output.py`) fires at the end of every agent turn. It reads the session transcript and extracts the assistant's text **since the last user prompt — including tool-result summaries** (tool *calls* are omitted as noise), via `claude_cli_get_recent_agent_messages.py`. It writes that to `projects/<project_id>/pending_pre_text_for_session_<session_id>.txt`.
-2. On the **next** prompt, the `UserPromptSubmit` hook reads (and deletes — consume-once) that file, truncates it to the per-project `pre_submission_capture_char_limit` (default 2000, kept from the bottom), and stores it as the new entry's `pre_submission_content`.
+How it's populated (installed by `install.py`): the **`UserPromptSubmit` hook** fires on every prompt. It reads the session transcript (`transcript_path` from the hook payload) and extracts the assistant's text from the **preceding turn — including tool-result summaries** (tool *calls* are omitted as noise), via `claude_cli_get_recent_agent_messages.py`, then truncates it to the per-project `pre_submission_capture_char_limit` (default 2000, kept from the bottom) and stores it as the new entry's `pre_submission_content`.
 
-Self-gating: the Stop hook no-ops for any session not registered to a project. The capture is Claude-Code-specific (transcript jsonl + Stop event); other platforms would supply their own adapter for the same `pre_submission_content` field.
+It deliberately does **not** use a `Stop` hook. A `Stop` event never fires when the user **interrupts/cancels** a turn, so a Stop-based capture silently dropped the pre-text for every interrupted turn. Reading the transcript at `UserPromptSubmit` time captures the preceding turn every prompt — including its partial output when interrupted. The extractor is robust to whether the incoming prompt is already appended to the transcript (it disambiguates via the payload's `prompt` text).
+
+Self-gating: the hook no-ops for any session not registered to a project. The capture is Claude-Code-specific (transcript jsonl); other platforms would supply their own adapter for the same `pre_submission_content` field.
 
 ### Per-node pre-text selection
 
@@ -293,7 +293,6 @@ A session may belong to **only one** project; `add-session`/`init-and-register` 
             raw_input_log.json                        # rolling log, grouped by session_id, raw_input_id sequential from 0
             reviewer_thinking.log                     # full streamed log of reviewer NDJSON events
             deferred_change_sets_queue.jsonl          # only used in deferred mode
-            pending_pre_text_for_session_<sid>.txt    # Stop-hook agent-output capture; consumed by next UserPromptSubmit
 ```
 
 ## Change-set schema

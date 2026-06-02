@@ -131,13 +131,6 @@ def project_deferred_change_sets_queue_file_path(project_id: str) -> Path:
     return project_directory_for(project_id) / "deferred_change_sets_queue.jsonl"
 
 
-def project_pending_pre_text_file_path(project_id: str, session_id: str) -> Path:
-    """Where the Stop hook stashes captured agent output (text + tool results)
-    to become the pre-text for this session's NEXT user prompt. Consumed (and
-    deleted) by the UserPromptSubmit hook."""
-    return project_directory_for(project_id) / f"pending_pre_text_for_session_{session_id}.txt"
-
-
 def ensure_root_directories_exist() -> None:
     SOURCE_OF_TRUTH_ROOT_DIR.mkdir(parents=True, exist_ok=True)
     PROJECTS_PARENT_DIR.mkdir(parents=True, exist_ok=True)
