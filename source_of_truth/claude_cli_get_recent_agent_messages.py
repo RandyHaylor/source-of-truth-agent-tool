@@ -239,8 +239,25 @@ def parse_events(path: Path) -> Iterator[dict]:
                 continue
 
 
+# When the user interrupts/cancels a turn, Claude Code writes a SYNTHETIC
+# type=="user" event into the transcript whose text is one of these markers
+# (e.g. "[Request interrupted by user]" or "[Request interrupted by user for
+# tool use]"). It is NOT a genuine prompt: it sits between the agent's partial
+# output and the user's next real prompt. If it were treated as the "last user
+# prompt" boundary, the preceding agent output (which is BEFORE the marker) would
+# be excluded and the pre-text would come back empty -- the exact interrupted-turn
+# bug. Matched by prefix so both the plain and "for tool use" variants are caught.
+_INTERRUPT_MARKER_TEXT_PREFIX: str = "[Request interrupted by user"
+
+
+def _is_interrupt_marker_text(text: str) -> bool:
+    """True if this text is a Claude Code interrupt/cancel marker pseudo-prompt."""
+    return text.strip().startswith(_INTERRUPT_MARKER_TEXT_PREFIX)
+
+
 def _is_genuine_user_prompt(event: dict) -> bool:
-    """True only for a real user prompt, NOT a tool result.
+    """True only for a real user prompt, NOT a tool result and NOT an
+    interrupt/cancel marker.
 
     Claude Code records tool results as type=="user" events whose
     message.content is a list containing tool_result blocks. A genuine user
@@ -249,17 +266,23 @@ def _is_genuine_user_prompt(event: dict) -> bool:
     count as the "last user message" boundary, otherwise assistant text
     emitted during a tool-use loop (the common case) is missed and the
     extractor returns empty.
+
+    Interrupt/cancel markers (also type=="user", string content) are likewise
+    excluded so a canceled turn's preceding agent output is still captured.
     """
     if event.get("type") != "user":
         return False
     content = event.get("message", {}).get("content")
     if isinstance(content, str):
-        return True
+        return not _is_interrupt_marker_text(content)
     if isinstance(content, list):
-        return not any(
+        if any(
             isinstance(block, dict) and block.get("type") == "tool_result"
             for block in content
-        )
+        ):
+            return False
+        # text+attachment prompt: still exclude if its text is just a marker.
+        return not _is_interrupt_marker_text(_genuine_user_prompt_text(event))
     return False
 
 

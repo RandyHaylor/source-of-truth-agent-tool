@@ -115,6 +115,57 @@ def test_userpromptsubmit_interrupted_turn_still_captures_partial_output(tmp_pat
     assert "Working on it; should I use X?" in entry["pre_submission_content"]
 
 
+# ----- interrupted/canceled turn: the transcript contains a synthetic
+# "[Request interrupted by user]" marker (type==user) between the agent's
+# partial output and the next real prompt. The boundary logic must skip it so
+# the preceding agent output is still captured (not blocked) AND the marker text
+# must never leak into the captured pre-text (not corrupted). -----
+
+INTERRUPTED_TURN_WITH_CANCEL_MARKER = [
+    {"type": "user", "message": {"role": "user", "content": "do the big task"}},
+    {"type": "assistant", "message": {"role": "assistant",
+        "content": [{"type": "text", "text": "Starting; I edited file A."}]}},
+    {"type": "assistant", "message": {"role": "assistant",
+        "content": [{"type": "tool_use", "name": "Edit", "input": {}}]}},
+    {"type": "user", "message": {"role": "user",
+        "content": [{"type": "tool_result", "content": "edited A"}]}},
+    {"type": "assistant", "message": {"role": "assistant",
+        "content": [{"type": "text", "text": "Now doing B..."}]}},
+    {"type": "user", "message": {"role": "user", "content": "[Request interrupted by user]"}},
+]
+
+
+def test_cancel_marker_is_not_a_genuine_user_prompt():
+    from source_of_truth.claude_cli_get_recent_agent_messages import _is_genuine_user_prompt
+    marker_event = {"type": "user", "message": {"role": "user", "content": "[Request interrupted by user]"}}
+    tool_use_variant = {"type": "user", "message": {"role": "user", "content": "[Request interrupted by user for tool use]"}}
+    real_prompt = {"type": "user", "message": {"role": "user", "content": "do the big task"}}
+    assert _is_genuine_user_prompt(marker_event) is False
+    assert _is_genuine_user_prompt(tool_use_variant) is False
+    assert _is_genuine_user_prompt(real_prompt) is True
+
+
+def test_interrupted_turn_pretext_not_blocked_and_not_corrupted_marker_not_appended():
+    # Hook fires with the new prompt NOT yet appended; transcript ends at marker.
+    pre = build_pre_text_for_incoming_user_prompt(
+        INTERRUPTED_TURN_WITH_CANCEL_MARKER, "actually stop, do C instead"
+    )
+    assert "Starting; I edited file A." in pre   # output BEFORE the marker captured
+    assert "Now doing B..." in pre               # last partial line captured
+    assert "[tool_result] edited A" in pre       # tool result captured
+    assert "[Request interrupted by user]" not in pre  # marker text NOT leaked
+
+
+def test_interrupted_turn_pretext_when_new_prompt_already_appended():
+    events = INTERRUPTED_TURN_WITH_CANCEL_MARKER + [
+        {"type": "user", "message": {"role": "user", "content": "actually stop, do C instead"}},
+    ]
+    pre = build_pre_text_for_incoming_user_prompt(events, "actually stop, do C instead")
+    assert "Starting; I edited file A." in pre
+    assert "Now doing B..." in pre
+    assert "[Request interrupted by user]" not in pre
+
+
 def test_userpromptsubmit_first_prompt_has_empty_pretext(tmp_path, monkeypatch):
     project_id = session_id = "sess-y"
     transcript = tmp_path / "y.jsonl"
