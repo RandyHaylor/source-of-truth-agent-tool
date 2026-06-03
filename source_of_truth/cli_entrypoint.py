@@ -476,10 +476,20 @@ def _resolve_project_and_remaining_args(
             explicit_project_id = args[flag_index + 1]
             del args[flag_index : flag_index + 2]
 
+    # Only a BARE token (no path separator, not absolute) may be a positional
+    # project-id override. A project id is a single directory name under
+    # PROJECTS_PARENT_DIR. Without this guard, a path-like argument -- notably
+    # add-path's absolute filesystem path -- would be misread as a project id:
+    # project_directory_for('/abs/dir') collapses (via pathlib's `/`) to
+    # '/abs/dir' itself, which often exists, so the real argument would be
+    # silently consumed as the project override.
     if (
         explicit_project_id is None
         and args
         and not args[0].startswith("-")
+        and not os.path.isabs(args[0])
+        and "/" not in args[0]
+        and os.sep not in args[0]
         and project_directory_for(args[0]).is_dir()
     ):
         explicit_project_id = args[0]
@@ -610,7 +620,11 @@ def _handle_add_path(argv: list[str]) -> int:
         return 2
     filesystem_path = rest[0]
     api = RequirementsTreeControlledApi(project_id, ClaudeCodeAdapter())
-    was_added = api.add_project_path(filesystem_path)
+    try:
+        was_added = api.add_project_path(filesystem_path)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     print("added" if was_added else "already_present")
     return 0
 
