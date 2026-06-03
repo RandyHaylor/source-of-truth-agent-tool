@@ -97,7 +97,9 @@ def _build_per_turn_additional_context_line(project_id: str, raw_input_id: int) 
         f"acting on it: "
         f"source-of-truth submit-change-set --add {raw_input_id} --parent {pending_parent} "
         f"--title \"<noun-phrase TOPIC, 1-50 chars, NOT a sentence>\". "
-        f"Move it to completed-instructions / deprecated-instructions (reparent op) when done or dropped. "
+        f"You MANAGE this tree -- don't ask permission to add/reparent; when you reparent a node to "
+        f"completed-instructions / deprecated-instructions (when done or dropped) just NOTIFY the user in one line. "
+        f"Using this tool is REQUIRED: it is your only way to store guaranteed verbatim user quotes as requirements. "
         f"Other content: file under the best-fit group (parent = a group letter id, or '0' for top-level). "
         f"view: source-of-truth show-tree, read SKILL.md for more"
     )

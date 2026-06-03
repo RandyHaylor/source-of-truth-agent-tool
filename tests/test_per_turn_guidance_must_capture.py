@@ -22,3 +22,7 @@ def test_guidance_names_must_capture_and_pending_instructions_group_id():
     assert f"--add 7 --parent {pending_id}" in guidance
     assert "completed-instructions" in guidance
     assert "deprecated-instructions" in guidance
+    # Manage-don't-ask + notify-on-move + tool-is-required policy.
+    assert "MANAGE" in guidance
+    assert "NOTIFY" in guidance
+    assert "REQUIRED" in guidance

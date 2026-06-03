@@ -33,6 +33,8 @@ Any prompt that is an **explicit instruction, decision, or answer** is a require
 
 File these under the **`pending-instructions`** group. When an instruction is carried out, reparent it to **`completed-instructions`**; when it's dropped/superseded, reparent it to **`deprecated-instructions`**. Capturing is not optional and not deferred until after the task — store first, then do the work.
 
+**You manage this tree — you don't ask permission to use it.** Add, reparent, and re-cite on your own judgement. When you move a node to `completed-instructions` or `deprecated-instructions`, just **notify** the user in one line (e.g. "Moved 'vendor placement' to completed-instructions") — no approval needed. Using the tool is **required**, not optional: it is the only mechanism that stores guaranteed verbatim user quotes as requirements. You have no other tool that does this.
+
 ## Expected workflow (each user turn)
 
 1. The user sends a prompt; it's auto-logged and you receive its `raw_input_id` in your turn context.
