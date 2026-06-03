@@ -1,0 +1,43 @@
+{
+  "document": "sot-operational-review",
+  "purpose": "Honest agent-experience review of the source-of-truth CLI/hooks, written while genuinely using the tool. Review artifact only -- NOT wired into the tool.",
+  "reviewer": "Claude (acting as the primary agent using SoT)",
+  "session_project_id": "0655b828-a441-43a2-8e27-f24430e8a2da",
+  "as_of_date": "2026-06-02",
+  "bottom_line": "Zero open defects. The two real bugs found were fixed this session. Everything else is minor doc/UX polish, not a malfunction. (An earlier draft of this file padded the nit list and even listed 'capture is advisory' as a defect -- it is not: the agent judges when to capture, by design.)",
+  "real_defects_found_and_fixed": [
+    {
+      "id": "pretext-interrupted-turn",
+      "area": "UserPromptSubmit pre-text capture",
+      "title": "Pre-text was empty on interrupted/canceled turns",
+      "severity": "high",
+      "status": "fixed-this-session",
+      "root_cause": "The synthetic '[Request interrupted by user]' type==user event was treated as the last-user-prompt boundary, excluding the preceding agent output.",
+      "fix": "Exclude interrupt markers from boundary detection (no leak into content). Regression tests with a realistic marker transcript. Commit 7375e9c.",
+      "verification": "Live transcript: 0 -> 28357 chars captured; marker not present."
+    },
+    {
+      "id": "add-path-absolute-path",
+      "area": "add-path / _resolve_project_and_remaining_args",
+      "title": "add-path mis-handled absolute paths; non-existent path dumped a traceback",
+      "severity": "high",
+      "status": "fixed-this-session",
+      "root_cause": "pathlib's '/' join collapses an absolute right operand, so project_directory_for('/abs') returned '/abs' (which exists), and the path arg was consumed as a bogus project-id override.",
+      "fix": "Restrict positional project override to a bare token (not absolute, no path separator); catch the non-existent-path ValueError for a clean error. Regression tests. Commit 2772d36.",
+      "verification": "Live: add-path with the absolute repo path returns 'added'; 164 tests pass."
+    }
+  ],
+  "minor_doc_ux_nits_not_defects": [
+    "Unknown-op / bad-parent messages come from the LLM reviewer rather than a deterministic pre-check; wording is inconsistent (a deterministic validator exists but runs after).",
+    "Session-id + transcript-path discovery uses the sentinel-echo trick; could be documented or auto-resolved.",
+    "'0' reads two ways at the --add call site (raw_input_id 0 vs parent '0' = top-level).",
+    "reorder_children uses parent_id while reparent/remove/modify_reference use node_id.",
+    "'0>1' / 'e>9' parent>child path notation in change-set output is not explained inline.",
+    "Per-turn guidance is a dense single block (improved this session; still one line)."
+  ],
+  "positive_observations": [
+    "Reviewer correctly refused to create nodes lacking explicit user backing ('user said test paths, not create nodes').",
+    "MUST-CAPTURE guidance + instruction-lifecycle groups demonstrably changed behavior live this session.",
+    "All CLI paths/ops exercised successfully: read, search-nodes, show-tree/--show-all, show-top-level, set-mode (live/deferred/none), flush-deferred, pretext (range/--none/--all), add, add_group, combo --new-group, reparent, reorder_children, modify_reference, remove, add-path (absolute, post-fix)."
+  ]
+}
