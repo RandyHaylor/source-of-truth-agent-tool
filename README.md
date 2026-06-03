@@ -29,7 +29,7 @@ Every requirement you give your AI coding agent is captured in your exact words 
 
 1. **You type:** `I want to use a MERN stack.`
 2. A hook copies it verbatim (`raw#7`) and hands the agent the id.
-3. The agent files a pointer (no requirement text of its own): `submit-change-set --add 7 --parent technical-requirements --title "stack choice"`
+3. The agent files a pointer (no requirement text of its own): `submit-change-set --add 7 --parent c --title "stack choice"` (here `c` is the letter id of the `technical-requirements` group — `--parent` takes a node id or group letter, not a title).
 4. A second AI approves the citation; the node lands.
 5. Anytime, you (or the agent) can pull that node and see **your exact words** — `"I want to use a MERN stack."`
 6. **Months later:** it still resolves to exactly what you said.
@@ -134,7 +134,7 @@ git clone git@github.com:RandyHaylor/source-of-truth-agent-tool.git
 cd source-of-truth-agent-tool
 
 # 2. Install. This copies the repo into ~/.claude/skills/source-of-truth-agent-tool/,
-#    writes the hook wrapper scripts (UserPromptSubmit / PostToolUse / Stop / etc.),
+#    writes the hook wrapper scripts (UserPromptSubmit / PostToolUse / etc.),
 #    patches ~/.claude/settings.json, deploys the `source-of-truth` command on your
 #    PATH (~/.local/bin), and seeds ~/.source-of-truth/global-settings.json.
 #    Reinstall is non-destructive: an existing install dir is moved to a backup, never deleted.
@@ -240,7 +240,7 @@ By convention `project_id == initializing session_id` (what `init-and-register` 
 
 ## Hook installation
 
-The global hooks (`UserPromptSubmit`, `PostToolUse`, and `Stop`) are installed by `python3 install.py` (see Quickstart). They fire on every Claude Code session but **self-gate on project membership** — they silently no-op for any session whose `session_id` is not in a project's `member_sessions` list, so leaving them installed is safe even when you're not using the tool.
+The global hooks (`UserPromptSubmit` and `PostToolUse`) are installed by `python3 install.py` (see Quickstart). They fire on every Claude Code session but **self-gate on project membership** — they silently no-op for any session whose `session_id` is not in a project's `member_sessions` list, so leaving them installed is safe even when you're not using the tool.
 
 `install.py`:
 - Deploys the repo into `~/.claude/skills/source-of-truth-agent-tool/` (skipping the copy if you cloned directly into that folder). **Reinstall is non-destructive:** an existing install dir is never deleted — the whole folder is *moved* to `~/.claude/source-of-truth-bak/<UTC-timestamp>/source-of-truth-agent-tool/` (logged to the console), then the repo is copied in fresh.
@@ -329,15 +329,12 @@ Op rules:
 
 `pre_text_line_range` (optional, selects the entry's agent pre-text on a node): absent ⇒ whole pre-text, `[start, end]` ⇒ those 1-indexed lines, `"none"` ⇒ excluded. Set it with the `pretext` verb.
 
-## Status
+## Schema highlights
 
-149 unit tests passing. Live haiku reviewer round-trip verified end-to-end with single-op, two-op, and four-call sequential tests. Hooks installed and self-gating verified across registered/unregistered/missing-package/malformed-input cases.
-
-Schema highlights as of the latest refactor:
 - Node ids are strings: `"1"`, `"2"`, … for quote leaves; `"a"`, `"b"`, …, `"aa"` for groups.
 - Every node carries `short_neutral_title` (1–50 chars, the subject not the spec).
 - `parent_id == "0"` is the top-level sentinel; agents must always pick a parent.
-- Group nodes (`add_group` op) organize the tree; the combo shortcut (`--new-group "<title>"`) creates a group + a leaf inside it in one change-set. New projects are pre-scaffolded with default top-level groups.
+- Group nodes (`add_group` op) organize the tree; the combo shortcut (`--new-group "<title>"`) creates a group + a leaf inside it in one change-set. New projects are pre-scaffolded with default top-level groups, including the instruction-lifecycle groups `pending-instructions` / `completed-instructions` / `deprecated-instructions`.
 - A node's citation can include the entry's agent pre-text (whole / line-range / `"none"`) via `pre_text_line_range`, set with the `pretext` verb.
 - All tunable settings live in JSON (`default-global-settings.json` overlaid by the live `global-settings.json`), each overridable per project.
 - Reviewer can emit `amended_short_title` per op when a title overreaches; the amended title is persisted automatically.
