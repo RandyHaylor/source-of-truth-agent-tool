@@ -173,15 +173,58 @@ def _parse_per_operation_verdicts(
     return parsed
 
 
+# Structural ops carry NO raw_input_reference and assert no requirement text --
+# they only rearrange/remove existing nodes, and the change-set applier validates
+# them deterministically (parent exists, child set matches, etc.). There is
+# nothing for the citation/title-oriented reviewer to fact-check, so sending them
+# to the LLM only produced false rejections ("no cited slice / not a requirement"),
+# which made a lifecycle reparent impossible in live mode. We auto-approve them
+# instead and only send citation/title ops (add / add_group / modify_reference)
+# to the reviewer.
+STRUCTURAL_OPS_REQUIRING_NO_REVIEW: frozenset[str] = frozenset(
+    {"reparent", "remove", "reorder_children"}
+)
+
+
 def request_change_set_review(
     reviewer_lifecycle: ReviewerSessionLifecycleManager,
     change_set_json_dict: dict[str, Any],
     project_id: str,
 ) -> ReviewerVerdict:
+    all_operations = change_set_json_dict.get("operations", [])
+    total_operation_count = len(all_operations)
+
+    # Partition into structural (auto-approved) and content (LLM-reviewed) ops,
+    # remembering each content op's ORIGINAL index so verdicts map back correctly.
+    structural_verdicts: list[PerOperationVerdict] = []
+    content_ops_with_original_index: list[tuple[int, dict[str, Any]]] = []
+    for original_index, operation in enumerate(all_operations):
+        if operation.get("op") in STRUCTURAL_OPS_REQUIRING_NO_REVIEW:
+            structural_verdicts.append(PerOperationVerdict(
+                operation_index=original_index,
+                approved=True,
+                reason="structural op (no citation to review); validated when applied",
+            ))
+        else:
+            content_ops_with_original_index.append((original_index, operation))
+
+    # All-structural change-set: nothing to fact-check, skip the LLM entirely.
+    if not content_ops_with_original_index:
+        return ReviewerVerdict(
+            approved=True,
+            message="Structural ops auto-approved (no citations to review).",
+            per_operation_verdicts=sorted(
+                structural_verdicts, key=lambda v: v.operation_index
+            ),
+            raw_response_text="",
+        )
+
+    content_operations = [op for _, op in content_ops_with_original_index]
+    content_change_set = {**change_set_json_dict, "operations": content_operations}
     inline_context = _build_inline_resolved_context_for_change_set(
-        project_id, change_set_json_dict
+        project_id, content_change_set
     )
-    total_operation_count = len(change_set_json_dict.get("operations", []))
+    content_operation_count = len(content_operations)
     prompt_text = (
         "Review fast. One bullet-style fact-check per op, then commit. "
         "Reply with EXACTLY one JSON object, nothing before/after, no markdown fence. "
@@ -218,7 +261,7 @@ def request_change_set_review(
         "Only reject for substantive defects: cited slice is not actually a requirement "
         "(question, thinking-aloud, reaction with no directive content), char_range cuts "
         "off mid-meaning, or the operation does not match the cited slice.\n\n"
-        f"OPS ({total_operation_count}):\n{json.dumps(change_set_json_dict.get('operations', []), indent=2)}\n\n"
+        f"OPS ({content_operation_count}):\n{json.dumps(content_operations, indent=2)}\n\n"
         f"RESOLVED CONTEXT (quotes inlined; no Read needed):\n{inline_context}"
     )
     response_text = reviewer_lifecycle.send_prompt_with_rotation_on_exhaustion(prompt_text)
@@ -231,8 +274,9 @@ def request_change_set_review(
             per_operation_verdicts=[],
             raw_response_text=response_text,
         )
-    per_op = _parse_per_operation_verdicts(verdict_payload, total_operation_count)
-    if not per_op:
+    # Verdict indices are in CONTENT-op space (0..content_operation_count-1).
+    content_verdicts = _parse_per_operation_verdicts(verdict_payload, content_operation_count)
+    if not content_verdicts:
         # Reviewer responded with valid JSON but no usable per-op verdicts;
         # fail closed rather than guess.
         return ReviewerVerdict(
@@ -244,13 +288,27 @@ def request_change_set_review(
             per_operation_verdicts=[],
             raw_response_text=response_text,
         )
+    # Map content-space verdict indices back to original change-set indices.
+    remapped_content_verdicts = [
+        PerOperationVerdict(
+            operation_index=content_ops_with_original_index[v.operation_index][0],
+            approved=v.approved,
+            reason=v.reason,
+            amended_short_title=v.amended_short_title,
+        )
+        for v in content_verdicts
+    ]
+    combined_verdicts = sorted(
+        structural_verdicts + remapped_content_verdicts,
+        key=lambda v: v.operation_index,
+    )
     every_op_approved = (
-        len(per_op) == total_operation_count
-        and all(v.approved for v in per_op)
+        len(combined_verdicts) == total_operation_count
+        and all(v.approved for v in combined_verdicts)
     )
     return ReviewerVerdict(
         approved=every_op_approved,
         message=str(verdict_payload.get("message", "")),
-        per_operation_verdicts=per_op,
+        per_operation_verdicts=combined_verdicts,
         raw_response_text=response_text,
     )
