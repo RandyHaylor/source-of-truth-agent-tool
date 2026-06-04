@@ -30,6 +30,9 @@ Any prompt that is an **explicit instruction, decision, or answer** is a require
 - direct commands ("do X", "add Y", "remove Z")
 - dependency/choice statements ("use library Y", "make it blue", "put it top-right")
 - answers to a question you asked ("yes", "no", "option B")
+- **answers to an `AskUserQuestion` multiple-choice prompt** — these are auto-captured too (see below), so a `raw_input_id` is waiting for you to file
+
+**`AskUserQuestion` answers are auto-logged.** When the user submits answers to an `AskUserQuestion` prompt, a `PostToolUse` hook records **one `raw_input_id` per question** (the selected label, comma-joined labels for multi-select, or the verbatim "Other" text) and hands you those ids back in `additionalContext`. These are explicit user decisions — file each under `pending-instructions` (or the fitting group) just like a typed prompt. (A dismissed/unanswered prompt logs nothing.)
 
 File these under the **`pending-instructions`** group. When an instruction is carried out, reparent it to **`completed-instructions`**; when it's dropped/superseded, reparent it to **`deprecated-instructions`**. Capturing is not optional and not deferred until after the task — store first, then do the work.
 

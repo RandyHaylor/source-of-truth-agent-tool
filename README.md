@@ -107,6 +107,7 @@ The result: the only path for a hallucinated requirement to enter the tree is th
 - **Cross-AI-CLI ready.** Claude Code is the first concrete adapter; the interface is small enough to plug another CLI under it.
 - **Self-gating global hooks.** Install once; hooks fire on every Claude Code session but silently no-op for any session not registered to a project.
 - **Terse replies still count.** The agent's prior turn is auto-captured as each entry's pre-text, so a bare "yes" / "option B" becomes a real, context-carrying requirement — no need to restate the question.
+- **Multiple-choice answers are captured too.** When the user answers an `AskUserQuestion` prompt (which doesn't fire the normal prompt path), a `PostToolUse` hook logs one `raw_input_id` per question — the selected label, comma-joined labels for multi-select, or verbatim "Other" text — and hands the ids to the agent to file. So menu-style decisions are first-class, citable requirements.
 - **Trimmable citations.** Per-node `pretext` selection narrows that captured context to specific lines (or drops it) without losing the audit trail.
 - **Per-project tuning.** Every global setting (reviewer model/mode, capture window, citation thresholds) is overridable per project with project→global fallback — no code edits.
 - **Non-destructive install.** Reinstalls move the old folder to a timestamped backup; nothing is ever deleted. One project per session is enforced.
