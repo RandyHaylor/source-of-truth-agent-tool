@@ -189,13 +189,17 @@ def test_deferred_flush_rejection_keeps_tree_unchanged_and_does_not_requeue():
     assert count_pending_deferred_change_sets("p-defer-reject") == 0
 
 
-def test_partial_per_op_verdicts_apply_only_approved_ops_in_live_mode():
+def test_partial_per_op_verdicts_apply_only_approved_ops_in_live_mode(monkeypatch):
     """In live mode, when reviewer approves some ops and rejects others, only approved ones land."""
     from source_of_truth.requirements_modification_reviewer import (
         PerOperationVerdict,
         ReviewerVerdict,
     )
     from source_of_truth.load_config import REVIEWER_MODE_LIVE_REVIEW_EVERY_SUBMIT
+    import source_of_truth.load_config as load_config
+    # Pin the legacy synchronous reviewer (bool OFF) so per-op rejection is still
+    # covered; the default reviewer is title-only non-blocking (never rejects).
+    monkeypatch.setattr(load_config, "REVIEWER_TITLE_ONLY_NONBLOCKING", False)
 
     save_project_settings(ProjectSettings(
         project_id="p-partial",

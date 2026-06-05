@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from .ai_cli_adapter_interface import AiCliAdapterInterface
+from . import load_config
 from .load_config import (
     INTERACTION_TIME_AGENT_GUIDANCE,
     REVIEWER_MODE_DEFER_UNTIL_FLUSH,
@@ -25,6 +26,7 @@ from .load_config import (
     resolve_effective_global_settings,
     resolve_reviewer_mode_for_project,
 )
+from . import background_title_reviewer
 from .conversation_context_injector import build_top_level_injection_text_for_project
 from .deferred_change_sets_queue import (
     append_change_set_to_deferred_queue,
@@ -255,6 +257,14 @@ class RequirementsTreeControlledApi:
                 applied_operation_count=0,
                 message_for_raw_input_sender=f"[source-of-truth] {user_message}",
                 reviewer_thinking_log_path=thinking_log_path,
+            )
+
+        # DEFAULT (bool ON): title-only, never-reject, non-blocking. Apply every
+        # op immediately, then detach a background title review. Only the LIVE
+        # mode is affected; none / deferred handled above.
+        if load_config.REVIEWER_TITLE_ONLY_NONBLOCKING:
+            return self._apply_all_ops_and_spawn_background_title_review(
+                change_set, thinking_log_path
             )
 
         # MODE: live -- contact reviewer now.
@@ -507,6 +517,83 @@ class RequirementsTreeControlledApi:
             reviewer_thinking_log_path=thinking_log_path,
             assigned_node_ids=assigned_node_lines_for_no_reviewer,
         )
+
+    def _apply_all_ops_and_spawn_background_title_review(
+        self, change_set: RequirementsTreeChangeSet, thinking_log_path: str,
+    ) -> ChangeSetSubmissionResult:
+        """Title-only non-blocking default: apply every op now (never reject),
+        then detach a background title review over the newly-created nodes.
+
+        Structural *apply* validity still governs whether an op lands (a missing
+        parent still fails as an apply error); that is NOT a review rejection.
+        """
+        operation_count = len(change_set.operations)
+        current_tree = load_requirements_tree(self._project_id)
+        new_tree, per_op_outcomes = apply_change_set_to_tree_with_per_op_isolation(
+            current_tree, change_set.operations
+        )
+        save_requirements_tree_atomically(new_tree)
+
+        assigned_node_lines = _format_assigned_node_lines_from_per_op_outcomes(per_op_outcomes)
+        applied_operation_count = sum(1 for o in per_op_outcomes if o["applied"])
+        created_node_ids = [
+            str(o["assigned_node_id"])
+            for o in per_op_outcomes
+            if o.get("applied") and o.get("assigned_node_id") is not None
+        ]
+
+        apply_failure_summary_text = ""
+        apply_failures = [o for o in per_op_outcomes if not o["applied"]]
+        if apply_failures:
+            apply_failure_summary_text = " Apply failures: " + "; ".join(
+                f"op[{o['operation_index']}]: {o['error']}" for o in apply_failures
+            )
+
+        if created_node_ids:
+            background_title_reviewer.spawn_background_title_review(
+                self._project_id, created_node_ids
+            )
+
+        title_review_note = (
+            " Title review queued in background; any title generalizations will be "
+            "reported on your next turn."
+            if created_node_ids
+            else ""
+        )
+        outcome_message = (
+            f"{applied_operation_count}/{operation_count} op(s) applied immediately "
+            f"(title-only non-blocking reviewer)."
+            f"{apply_failure_summary_text}{title_review_note}"
+        )
+        add_pending_message_for_raw_input_sender(outcome_message, target_project_id=self._project_id)
+        return ChangeSetSubmissionResult(
+            approved=(applied_operation_count == operation_count),
+            reviewer_message="title-only non-blocking: applied immediately, title review backgrounded"
+            + apply_failure_summary_text,
+            applied_operation_count=applied_operation_count,
+            message_for_raw_input_sender=f"[source-of-truth] {outcome_message}",
+            reviewer_thinking_log_path=thinking_log_path,
+            assigned_node_ids=assigned_node_lines,
+        )
+
+    def rename_node_title(self, node_id: str, new_title: str) -> bool:
+        """Set a node's title and trigger the SAME backgrounded title review.
+
+        Accepts an nd-prefixed or bare id. Returns False if the node is unknown.
+        """
+        from .id_display import strip_node_id_input_prefix
+
+        normalized_node_id = strip_node_id_input_prefix(node_id)
+        tree = load_requirements_tree(self._project_id)
+        node = tree.nodes_by_id.get(normalized_node_id)
+        if node is None:
+            return False
+        node.short_neutral_title = new_title
+        save_requirements_tree_atomically(tree)
+        background_title_reviewer.spawn_background_title_review(
+            self._project_id, [normalized_node_id]
+        )
+        return True
 
     def add_project_path(self, filesystem_path: str) -> bool:
         if not os.path.exists(filesystem_path):

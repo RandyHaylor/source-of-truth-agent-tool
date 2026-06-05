@@ -186,6 +186,75 @@ STRUCTURAL_OPS_REQUIRING_NO_REVIEW: frozenset[str] = frozenset(
 )
 
 
+TITLE_GENERALIZATION_RULE: str = (
+    "A node title must be a SHORT NEUTRAL SUBJECT: a 1-5 word noun phrase naming "
+    "the TOPIC only. It must NOT contain specific requirement detail (no values, "
+    "no rules, no sentences, no decisions). Examples: 'Use npm package manager' -> "
+    "'package manager selection'; 'Vendors only on even floors' -> 'vendor placement'; "
+    "'Phrases must be in-character' -> 'phrase character voice'. If a title is already "
+    "a short neutral subject, leave it unchanged."
+)
+
+
+def build_title_generalization_prompt(titles_by_node_id: dict[str, str]) -> str:
+    """Prompt asking the model to generalize specific titles to neutral subjects.
+
+    Reply contract: EXACTLY one JSON object {"titles": [{"node_id": "<id>",
+    "generalized_title": "<short neutral subject>"}, ...]}, one entry per input
+    node. If a title is already neutral, echo it unchanged.
+    """
+    listing = "\n".join(
+        f"  {node_id}: {title!r}" for node_id, title in titles_by_node_id.items()
+    )
+    return (
+        "Generalize requirement-tree node TITLES to short neutral subjects.\n"
+        f"{TITLE_GENERALIZATION_RULE}\n\n"
+        "Reply with EXACTLY one JSON object, nothing before/after, no markdown fence:\n"
+        '  {"titles": [{"node_id": "<id>", "generalized_title": "<short neutral subject>"}, ...]}\n'
+        "One entry per input node. Echo unchanged titles verbatim.\n\n"
+        f"TITLES:\n{listing}"
+    )
+
+
+def parse_generalized_titles_from_response(
+    response_text: str, valid_node_ids: "set[str] | None" = None
+) -> dict[str, str]:
+    """Extract {node_id: generalized_title} from a title-generalization reply.
+
+    Robust to surrounding prose / code fences (reuses the right-to-left balanced
+    brace scan). Entries with empty titles, or node_ids not in valid_node_ids
+    (when provided), are dropped.
+    """
+    for candidate_substring in _iter_balanced_brace_object_substrings_from_end(response_text):
+        try:
+            parsed = json.loads(candidate_substring)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and "titles" in parsed:
+            break
+    else:
+        return {}
+    out: dict[str, str] = {}
+    raw_titles = parsed.get("titles")
+    if not isinstance(raw_titles, list):
+        return {}
+    for raw in raw_titles:
+        if not isinstance(raw, dict):
+            continue
+        node_id = raw.get("node_id")
+        generalized = raw.get("generalized_title")
+        if not isinstance(node_id, str) or not isinstance(generalized, str):
+            continue
+        node_id = node_id.strip()
+        generalized = generalized.strip()
+        if not node_id or not generalized:
+            continue
+        if valid_node_ids is not None and node_id not in valid_node_ids:
+            continue
+        out[node_id] = generalized
+    return out
+
+
 def request_change_set_review(
     reviewer_lifecycle: ReviewerSessionLifecycleManager,
     change_set_json_dict: dict[str, Any],

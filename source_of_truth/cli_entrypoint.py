@@ -644,6 +644,28 @@ def _handle_add_path(argv: list[str]) -> int:
     return 0
 
 
+def _handle_rename(argv: list[str]) -> int:
+    """Set a node's title; triggers a backgrounded title review.
+
+    Usage: source-of-truth rename <node_id> "<new title>"
+    Accepts an nd-prefixed or bare node id.
+    """
+    project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+    if len(rest) != 2:
+        print('Usage: source-of-truth rename <node_id> "<new title>"', file=sys.stderr)
+        return 2
+    node_id, new_title = rest
+    api = RequirementsTreeControlledApi(project_id, ClaudeCodeAdapter())
+    if not api.rename_node_title(node_id, new_title):
+        print(f"node {node_id!r} not found", file=sys.stderr)
+        return 1
+    print(f"renamed {node_id} -> {new_title!r}; title review queued in background")
+    return 0
+
+
 def _handle_show_top_level(argv: list[str]) -> int:
     project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
     if error_message:
@@ -750,6 +772,7 @@ _VERB_DISPATCH_TABLE = {
     "pretext": _handle_pretext,
     "flush-deferred": _handle_flush_deferred,
     "add-path": _handle_add_path,
+    "rename": _handle_rename,
     "show-top-level": _handle_show_top_level,
 }
 
@@ -768,6 +791,7 @@ _VERB_ONE_LINER_DESCRIPTIONS = {
     "pretext": "Set how much of a node's agent pre-text is cited: <node_id> <start> <end> | --all | --none.",
     "flush-deferred": "Apply queued submits in deferred mode (no-op otherwise).",
     "add-path": "Pin a filesystem path on a project's project-paths node.",
+    "rename": "Set a node's title (triggers a backgrounded title review).",
     "show-top-level": "Print only the top-level group/leaf summary for a project.",
 }
 

@@ -51,6 +51,15 @@ ALL_VALID_REVIEWER_MODES: tuple[str, ...] = (
 
 DEFAULT_REVIEWER_MODE: str = REVIEWER_MODE_LIVE_REVIEW_EVERY_SUBMIT
 
+# When ON (the new default), the live-review submit path NEVER rejects and NEVER
+# blocks: every op is applied immediately, and a DETACHED background process
+# generalizes only the node TITLES (stripping specific requirement detail),
+# reporting any changes via the existing pending-message queue. When OFF, the
+# legacy synchronous per-op review (which can reject and amend titles inline)
+# runs instead. Kept as an internal, reversible toggle so the legacy path stays
+# available (and is exercised by tests that pin this False).
+REVIEWER_TITLE_ONLY_NONBLOCKING: bool = True
+
 
 # Every global setting a project may override, keyed by its EXACT global key
 # name (the same key used in global-settings.json). resolve_effective_global_

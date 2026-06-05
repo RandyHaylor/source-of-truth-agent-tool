@@ -44,7 +44,11 @@ def test_per_op_verdict_parser_extracts_amended_short_title_when_present():
     assert parsed[1].amended_short_title is None
 
 
-def test_controlled_api_applies_amended_title_in_persisted_tree():
+def test_controlled_api_applies_amended_title_in_persisted_tree(monkeypatch):
+    # Pin the legacy synchronous reviewer (bool OFF) so this test keeps covering
+    # the inline amended-title path; the default is title-only non-blocking.
+    import source_of_truth.load_config as load_config
+    monkeypatch.setattr(load_config, "REVIEWER_TITLE_ONLY_NONBLOCKING", False)
     save_project_settings(ProjectSettings(
         project_id="p-amend",
         reviewer_mode_override=REVIEWER_MODE_LIVE_REVIEW_EVERY_SUBMIT,
