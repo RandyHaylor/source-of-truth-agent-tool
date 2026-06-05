@@ -93,3 +93,5 @@ source-of-truth search-nodes <query>
 ```
 
 JSON form is still available for multi-op change-sets (`submit-change-set '<json>'` or `@file.json` or `-` for stdin). See `README.md` for the full op schema (add, add_group, reparent, remove, modify_reference, reorder_children).
+
+**Reviewer scope.** Only citation-bearing ops (`add`, `add_group`, `modify_reference`) are reviewed. Structural ops (`reparent`, `remove`, `reorder_children`) carry no quote to verify, so they **auto-approve** and skip the reviewer — lifecycle moves to `completed-`/`deprecated-instructions` apply immediately even in `live` mode.

@@ -87,10 +87,16 @@ def _build_per_turn_additional_context_line(project_id: str, raw_input_id: int) 
 
     Commands take no project id -- it is resolved from the current session.
     """
+    from .id_display import format_node_id_for_display
+
     pending_id = _find_group_id_by_title(project_id, PENDING_INSTRUCTIONS_GROUP_TITLE)
-    pending_parent = pending_id if pending_id is not None else "<pending-instructions id; run show-tree>"
+    pending_parent = (
+        format_node_id_for_display(pending_id)
+        if pending_id is not None
+        else "<pending-instructions id; run show-tree>"
+    )
     return (
-        f"source-of-truth: prompt logged id:{raw_input_id}. "
+        f"source-of-truth: prompt logged raw-{raw_input_id}. "
         f"MUST-CAPTURE -- if this prompt is an instruction, decision, or answer to an "
         f"agent's requirement/task question (e.g. 'do X', 'use library Y', 'make it blue', "
         f"'yes', 'option B'), it IS a requirement: store it under pending-instructions before "
@@ -100,7 +106,9 @@ def _build_per_turn_additional_context_line(project_id: str, raw_input_id: int) 
         f"You MANAGE this tree -- don't ask permission to add/reparent; when you reparent a node to "
         f"completed-instructions / deprecated-instructions (when done or dropped) just NOTIFY the user in one line. "
         f"Using this tool is REQUIRED: it is your only way to store guaranteed verbatim user quotes as requirements. "
-        f"Other content: file under the best-fit group (parent = a group letter id, or '0' for top-level). "
+        f"(AskUserQuestion answers are auto-captured the same way -- you'll get their raw-ids in a PostToolUse note. "
+        f"Ids display as nd-<node> / raw-<input>; commands accept either prefixed or bare.) "
+        f"Other content: file under the best-fit group (parent = a group node id, or '0' for top-level). "
         f"view: source-of-truth show-tree, read SKILL.md for more"
     )
 

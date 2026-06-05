@@ -22,7 +22,7 @@ Every requirement you give your AI coding agent is captured in your exact words 
 
 - **Verbatim capture** — every prompt you send is script-copied to an append-only log the agent cannot edit.
 - **Pointers, not prose** — each requirement references your quote; the agent only adds short, reviewer-audited labels, never the requirement text itself.
-- **Second-AI review** on every change, so your words can't be mis-cited.
+- **Second-AI review** on every requirement you add or re-cite, so your words can't be mis-cited. (Structural moves — reparent/remove/reorder — carry no citation and auto-approve.)
 - **Context preserved** — each quote keeps the agent's preceding message, so even your one-word "yes" resolves to the question it answered.
 
 ## In practice
@@ -97,7 +97,7 @@ This tool fixes that.
 
 1. **Every raw input you send is captured verbatim** to a per-project log file at write-time, untouched.
 2. The agent is allowed to maintain a **requirements tree**, but every node in that tree is **only a reference to a verbatim quote** in the log — never agent prose. Nothing the agent can write goes into the tree directly.
-3. Every proposed edit to the tree (add, move, remove, modify reference, reorder) is sent to a **separate AI reviewer subprocess** (Haiku by default — fast and cheap) which returns a per-operation approve/reject verdict with reasons.
+3. Every **citation-bearing** op (`add`, `add_group`, `modify_reference`) is sent to a **separate AI reviewer subprocess** (Haiku by default — fast and cheap), which returns a per-operation approve/reject verdict with reasons. **Structural ops** (`reparent`/move, `remove`, `reorder_children`) carry no citation to fact-check, so they are auto-approved and skip the reviewer entirely — an all-structural change-set makes no reviewer round-trip.
 4. Only approved operations land on disk. Rejected ones come back to the agent with the reviewer's reasoning. Approved ops are also applied **one at a time** so a single bad op (e.g., a `reparent` referencing a node a sibling op removed) doesn't sink the others — its failure is reported back to the agent per-op.
 5. The agent receives a small top-level summary of the tree on every turn, plus brief usage instructions.
 
@@ -107,7 +107,7 @@ The result: the only path for a hallucinated requirement to enter the tree is th
 
 - **Verbatim audit trail.** Every requirement in the tree resolves to a real timestamped quote you typed.
 - **No paraphrase rot.** Agent cannot rewrite or summarize requirements into the tree.
-- **Two-AI gate.** A second model (different role, fresh context) reviews every proposed change.
+- **Two-AI gate.** A second model (different role, fresh context) reviews every citation-bearing op (`add`/`add_group`/`modify_reference`); structural moves (`reparent`/`remove`/`reorder_children`) auto-approve since there is no quote to verify.
 - **Three speed tiers.** Live review on every submit, batched review on demand (deferred mode), or no review at all (none mode) when you want raw speed and trust the agent.
 - **Per-operation verdicts.** The reviewer can approve some ops and reject others in the same batch.
 - **Streamed reviewer log.** Watch the reviewer's NDJSON event stream live in `reviewer_thinking.log` as it works.

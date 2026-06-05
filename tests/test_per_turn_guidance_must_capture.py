@@ -18,8 +18,8 @@ def test_guidance_names_must_capture_and_pending_instructions_group_id():
 
     assert "MUST-CAPTURE" in guidance
     assert "pending-instructions" in guidance
-    # Points at the real group id and the correct raw_input_id.
-    assert f"--add 7 --parent {pending_id}" in guidance
+    # Points at the real group id (nd- prefixed) and the correct raw_input_id.
+    assert f"--add 7 --parent nd-{pending_id}" in guidance
     assert "completed-instructions" in guidance
     assert "deprecated-instructions" in guidance
     # Manage-don't-ask + notify-on-move + tool-is-required policy.

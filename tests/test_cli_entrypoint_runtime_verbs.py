@@ -44,7 +44,7 @@ def _build_one_op_top_level_leaf_change_set_json(raw_input_id: int, short_title:
 def test_per_turn_additional_context_line_is_one_line_with_two_commands():
     line = _build_per_turn_additional_context_line(project_id="proj-x", raw_input_id=42)
     assert "\n" not in line, "must be a single line"
-    assert "id:42" in line
+    assert "raw-42" in line  # raw input id shown with the raw- display prefix
     assert "source-of-truth submit-change-set --add 42" in line
     assert "source-of-truth show-tree" in line
     assert "SKILL.md" in line
