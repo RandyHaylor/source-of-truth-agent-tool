@@ -289,12 +289,16 @@ def _build_combo_or_leaf_or_group_shortcut_payload(
     new_group_short_neutral_title = _extract_named_flag_value_from_argv_or_none(payload_args, "--new-group")
 
     if has_add_flag:
+        from .id_display import strip_raw_input_id_input_prefix
         try:
             add_flag_index = payload_args.index("--add")
             raw_input_id_string = payload_args[add_flag_index + 1]
-            raw_input_id_int = int(raw_input_id_string)
+            raw_input_id_int = int(strip_raw_input_id_input_prefix(raw_input_id_string))
         except (IndexError, ValueError) as exc:
-            raise ValueError(f"--add requires an integer raw_input_id immediately after it: {exc}") from exc
+            raise ValueError(
+                f"--add requires an integer raw_input_id (optionally raw-prefixed) "
+                f"immediately after it: {exc}"
+            ) from exc
         if explicit_parent_id_string is None:
             raise ValueError("--add requires --parent <node_id_or_'0'>")
         if explicit_short_neutral_title is None:
@@ -548,7 +552,8 @@ def _handle_read(argv: list[str]) -> int:
     if len(rest) < 1:
         print("Usage: source-of-truth read <node_id> [<node_id> ...]", file=sys.stderr)
         return 2
-    requested_node_ids = rest
+    from .id_display import strip_node_id_input_prefix
+    requested_node_ids = [strip_node_id_input_prefix(token) for token in rest]
     api = RequirementsTreeControlledApi(project_id, ClaudeCodeAdapter())
     payload_per_node: list[dict] = []
     any_id_failed = False
@@ -659,7 +664,8 @@ def _handle_pretext(argv: list[str]) -> int:
     if len(tokens) < 2:
         print(usage, file=sys.stderr)
         return 2
-    node_id = tokens[0]
+    from .id_display import strip_node_id_input_prefix
+    node_id = strip_node_id_input_prefix(tokens[0])
     selection_tokens = tokens[1:]
     if selection_tokens == ["--all"]:
         new_selection = None            # whole pre-text (clear the narrowing)

@@ -12,6 +12,10 @@ from .raw_input_log_reader import (
     RawLogEntryNotFoundError,
     resolve_quote_text_from_reference,
 )
+from .id_display import (
+    format_node_id_for_display,
+    format_raw_input_id_for_display,
+)
 from .requirements_tree_node_schema import (
     PROJECT_PATHS_SPECIAL_NODE_KIND,
     QUOTE_REFERENCE_NODE_KIND,
@@ -49,23 +53,24 @@ def _render_node_line(
 ) -> str:
     indent = "  " * depth
     child_count = len(node.child_node_ids)
+    node_id_label = format_node_id_for_display(node.node_id)
     if node.kind == PROJECT_PATHS_SPECIAL_NODE_KIND:
         paths_summary = ", ".join(node.project_paths) if node.project_paths else "(no paths)"
-        return f"{indent}[{node.node_id}] project_paths: {paths_summary}"
+        return f"{indent}[{node_id_label}] project_paths: {paths_summary}"
     if depth < max_inlined_depth and node.kind == QUOTE_REFERENCE_NODE_KIND:
         quote_text = _resolve_quote_text_or_placeholder(project_id, node)
         ref = node.raw_input_reference
-        raw_id_label = f"raw#{ref.raw_input_id}" if ref else "raw#?"
+        raw_id_label = format_raw_input_id_for_display(ref.raw_input_id) if ref else "raw-?"
         children_label = f" (+{child_count})" if child_count else ""
         return (
-            f"{indent}[{node.node_id}] {raw_id_label}{children_label}: "
+            f"{indent}[{node_id_label}] {raw_id_label}{children_label}: "
             f"{_shorten_to_one_line(quote_text, max_quote_chars)}"
         )
     # Groups (and any node past the inlined depth): show the human title if present,
     # falling back to the kind only when there's no title.
     title_or_kind = node.short_neutral_title if node.short_neutral_title else node.kind
     children_label = f" (+{child_count} children)" if child_count else ""
-    return f"{indent}[{node.node_id}] {title_or_kind}{children_label}"
+    return f"{indent}[{node_id_label}] {title_or_kind}{children_label}"
 
 
 def render_tree_titles_only_indented(project_id: str, tree: RequirementsTree) -> str:
@@ -85,14 +90,19 @@ def render_tree_titles_only_indented(project_id: str, tree: RequirementsTree) ->
     def _walk(node_id: str, depth: int) -> None:
         node = tree.nodes_by_id.get(node_id)
         if node is None:
-            output_lines.append(("  " * depth) + f"{node_id} (missing)")
+            output_lines.append(
+                ("  " * depth) + f"{format_node_id_for_display(node_id)} (missing)"
+            )
             return
         title_for_display = (
             node.short_neutral_title
             if node.short_neutral_title
             else f"({node.kind})"
         )
-        output_lines.append(("  " * depth) + f"{node.node_id} {title_for_display}")
+        output_lines.append(
+            ("  " * depth)
+            + f"{format_node_id_for_display(node.node_id)} {title_for_display}"
+        )
         for child_id in node.child_node_ids:
             _walk(child_id, depth + 1)
 
@@ -119,7 +129,9 @@ def render_tree_compact(
     def _walk(node_id: str, depth: int) -> None:
         node = tree.nodes_by_id.get(node_id)
         if node is None:
-            output_lines.append("  " * depth + f"[{node_id}] (missing)")
+            output_lines.append(
+                "  " * depth + f"[{format_node_id_for_display(node_id)}] (missing)"
+            )
             return
         output_lines.append(_render_node_line(
             project_id, node, depth, max_inlined_depth, max_quote_chars

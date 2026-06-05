@@ -130,8 +130,8 @@ def test_show_tree_show_all_flag_inlines_quote_text_for_top_level_nodes(capsys):
     captured = capsys.readouterr()
     assert rc == 0
     assert "the actual requirement text the user typed" in captured.out
-    assert "[1]" in captured.out
-    assert "raw#" in captured.out
+    assert "[nd-1]" in captured.out
+    assert "raw-" in captured.out
 
 
 def test_get_node_returns_node_payload_for_existing_id(capsys):

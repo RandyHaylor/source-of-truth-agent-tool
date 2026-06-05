@@ -33,7 +33,7 @@ def test_submit_response_for_combo_lists_both_new_node_ids_with_parent_arrow_and
     assert rc == 0
     payload = json.loads(captured.out)
     assigned_lines = payload["assigned_node_ids"]
-    assert assigned_lines == ["0>a: ui interface", "a>1: ui color scheme"]
+    assert assigned_lines == ["nd-0>nd-a: ui interface", "nd-a>nd-1: ui color scheme"]
 
 
 def test_submit_response_for_leaf_only_lists_one_assignment_line(capsys):
@@ -48,7 +48,7 @@ def test_submit_response_for_leaf_only_lists_one_assignment_line(capsys):
     assert rc == 0
     payload = json.loads(captured.out)
     assigned_lines = payload["assigned_node_ids"]
-    assert assigned_lines == ["0>1: back end stack"]
+    assert assigned_lines == ["nd-0>nd-1: back end stack"]
 
 
 def test_submit_response_for_group_only_lists_one_assignment_line(capsys):
@@ -62,7 +62,7 @@ def test_submit_response_for_group_only_lists_one_assignment_line(capsys):
     assert rc == 0
     payload = json.loads(captured.out)
     assigned_lines = payload["assigned_node_ids"]
-    assert assigned_lines == ["0>a: vendor rules"]
+    assert assigned_lines == ["nd-0>nd-a: vendor rules"]
 
 
 def test_submit_response_assigned_lines_empty_when_no_add_or_add_group_ops(capsys):

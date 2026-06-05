@@ -51,11 +51,13 @@ class RawInputReference:
 
     @classmethod
     def from_json_dict(cls, raw: dict[str, Any]) -> "RawInputReference":
+        from .id_display import strip_raw_input_id_input_prefix
+
         raw_pre_text_line_range = raw.get("pre_text_line_range")
         if isinstance(raw_pre_text_line_range, (list, tuple)):
             raw_pre_text_line_range = list(raw_pre_text_line_range)
         return cls(
-            raw_input_id=int(raw["raw_input_id"]),
+            raw_input_id=int(strip_raw_input_id_input_prefix(raw["raw_input_id"])),
             char_range=list(raw["char_range"]) if raw.get("char_range") is not None else None,
             pre_text_line_range=raw_pre_text_line_range,
         )
@@ -65,15 +67,29 @@ TOP_LEVEL_PARENT_SENTINEL: str = "0"
 
 
 def _coerce_node_id_to_string(raw_value: Any) -> str:
-    """Legacy ints become "1", "2"; new string ids ("a", "12", "aa") pass through."""
-    return str(raw_value)
+    """Legacy ints become "1", "2"; new string ids ("a", "12", "aa") pass through.
+
+    An optional display prefix (`nd-`) on input is stripped to the bare id; a bare
+    on-disk id (no prefix) is a no-op, so saved trees round-trip unchanged.
+    """
+    from .id_display import strip_node_id_input_prefix
+
+    return strip_node_id_input_prefix(raw_value)
 
 
 def _coerce_parent_id_to_string_with_top_level_sentinel(raw_value: Any) -> str:
-    """null/None/0/"0" all collapse to TOP_LEVEL_PARENT_SENTINEL ("0")."""
-    if raw_value is None or raw_value == 0 or raw_value == "0":
+    """null/None/0/"0"/"nd-0" all collapse to TOP_LEVEL_PARENT_SENTINEL ("0").
+
+    An optional `nd-` display prefix on input is stripped before the comparison.
+    """
+    from .id_display import strip_node_id_input_prefix
+
+    if raw_value is None or raw_value == 0:
         return TOP_LEVEL_PARENT_SENTINEL
-    return str(raw_value)
+    stripped = strip_node_id_input_prefix(raw_value)
+    if stripped == "0":
+        return TOP_LEVEL_PARENT_SENTINEL
+    return stripped
 
 
 @dataclass

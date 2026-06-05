@@ -28,8 +28,8 @@ Every requirement you give your AI coding agent is captured in your exact words 
 ## In practice
 
 1. **You type:** `I want to use a MERN stack.`
-2. A hook copies it verbatim (`raw#7`) and hands the agent the id.
-3. The agent files a pointer (no requirement text of its own): `submit-change-set --add 7 --parent c --title "stack choice"` (here `c` is the letter id of the `technical-requirements` group — `--parent` takes a node id or group letter, not a title).
+2. A hook copies it verbatim (`raw-7`) and hands the agent the id.
+3. The agent files a pointer (no requirement text of its own): `submit-change-set --add raw-7 --parent nd-c --title "stack choice"` (here `nd-c` is the node id of the `technical-requirements` group — `--parent` takes a node id or group letter, not a title).
 4. A second AI approves the citation; the node lands.
 5. Anytime, you (or the agent) can pull that node and see **your exact words** — `"I want to use a MERN stack."`
 6. **Months later:** it still resolves to exactly what you said.
@@ -65,12 +65,12 @@ Every requirement you give your AI coding agent is captured in your exact words 
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                  RENDERED VIEW  (what the agent / user sees)                 │
 │                                                                              │
-│  [A.a]   raw#3: must support offline mode for at least 24 hours of cached... │
-│   [A.a.i]  raw#3: cache eviction is LRU, capped at 500 MB                    │
-│   [A.a.ii] raw#5: re-sync on reconnect must be incremental, not a full...    │
-│  [A.b]   raw#4: all user-visible timestamps render in the viewer's local...  │
-│  [B.a]   raw#7: login flow must use OAuth2 (Google + GitHub providers only)  │
-│  [B.b]   raw#9: the auth code lives in src/auth/ and tests in tests/auth/    │
+│  nd-a   raw-3: must support offline mode for at least 24 hours of cached...  │
+│   nd-1   raw-3: cache eviction is LRU, capped at 500 MB                      │
+│   nd-2   raw-5: re-sync on reconnect must be incremental, not a full...      │
+│  nd-b   raw-4: all user-visible timestamps render in the viewer's local...   │
+│  nd-3   raw-7: login flow must use OAuth2 (Google + GitHub providers only)   │
+│  nd-4   raw-9: the auth code lives in src/auth/ and tests in tests/auth/     │
 └──────────────────────────────────────────────────────────────────────────────┘
 
 The tree itself carries no requirement text — only pointers. All requirement
@@ -79,6 +79,13 @@ cannot paraphrase or drift from what the user actually said. Each raw-log entry
 also carries the agent's *preceding* output (auto-captured "pre-text"), so even a
 one-word reply like "yes" resolves to the full question/plan it answered.
 ```
+
+**Id convention.** Two distinct id spaces are never conflated: tree **node ids**
+display as `nd-<id>` (e.g. `nd-2`, `nd-e`) and raw-log **input ids** display as
+`raw-<id>` (e.g. `raw-22`). Commands accept either the prefixed or the bare form
+on input (`--parent nd-c` or `--parent c`; `--add raw-7` or `--add 7`); the prefix
+is stripped to the bare canonical id, and ids are stored bare on disk. Tree
+operations are **node-id-only** — you never operate on a node by its raw input id.
 
 ## The problem
 

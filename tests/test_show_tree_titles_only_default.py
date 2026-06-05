@@ -52,10 +52,10 @@ def test_titles_only_renderer_emits_id_space_title_with_no_brackets():
     for line in lines:
         assert "[" not in line and "]" not in line, f"unexpected brackets in: {line!r}"
     # Each top-level group/leaf appears with id+title.
-    assert any(ln.lstrip().startswith("a vendor rules") for ln in lines)
-    assert any(ln.lstrip().startswith("2 back end stack") for ln in lines)
+    assert any(ln.lstrip().startswith("nd-a vendor rules") for ln in lines)
+    assert any(ln.lstrip().startswith("nd-2 back end stack") for ln in lines)
     # Nested leaf indented (two spaces beyond its parent).
-    assert any(ln.startswith("  1 vendor placement") for ln in lines)
+    assert any(ln.startswith("  nd-1 vendor placement") for ln in lines)
 
 
 def test_show_tree_default_uses_titles_only_renderer(capsys):
@@ -71,7 +71,7 @@ def test_show_tree_default_uses_titles_only_renderer(capsys):
     rc = _handle_show_tree(["p-titles"])
     captured = capsys.readouterr()
     assert rc == 0
-    assert "1 back end stack" in captured.out
+    assert "nd-1 back end stack" in captured.out
     # Default must NOT inline the raw quote text.
     assert "raw text body" not in captured.out
     assert "[" not in captured.out and "]" not in captured.out

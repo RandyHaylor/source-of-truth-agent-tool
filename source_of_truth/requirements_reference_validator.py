@@ -24,7 +24,10 @@ class ReferenceValidationError(ValueError):
 def validate_raw_input_reference(
     project_id: str, raw_input_reference: dict[str, Any]
 ) -> None:
-    raw_input_id = raw_input_reference.get("raw_input_id")
+    from .id_display import strip_raw_input_id_input_prefix
+
+    # Accept an optional `raw-` display prefix on input; normalize to the bare id.
+    raw_input_id = strip_raw_input_id_input_prefix(raw_input_reference.get("raw_input_id"))
     char_range = raw_input_reference.get("char_range")
     if raw_input_id is None or not isinstance(raw_input_id, int):
         raise ReferenceValidationError(

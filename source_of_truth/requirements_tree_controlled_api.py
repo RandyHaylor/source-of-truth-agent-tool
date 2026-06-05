@@ -76,6 +76,25 @@ class ChangeSetSubmissionResult:
             self.assigned_node_ids = []
 
 
+def _format_node_display_line(node: RequirementsTreeNode, cited_text: "str | None") -> str:
+    """Human display per the id-display convention.
+
+    Quote-reference node: `nd-<id>: <title> - raw-<rid>: <cited_text>`.
+    Group / project-paths node (no raw ref): `nd-<id>: <title>`.
+    """
+    from .id_display import format_node_id_for_display, format_raw_input_id_for_display
+
+    title = node.short_neutral_title if node.short_neutral_title else node.kind
+    base = f"{format_node_id_for_display(node.node_id)}: {title}"
+    reference = node.raw_input_reference
+    if reference is None:
+        return base
+    raw_label = format_raw_input_id_for_display(reference.raw_input_id)
+    if cited_text is None:
+        return f"{base} - {raw_label}"
+    return f"{base} - {raw_label}: {cited_text}"
+
+
 def _format_assigned_node_lines_from_per_op_outcomes(
     per_op_outcomes: list[dict[str, Any]],
 ) -> list[str]:
@@ -85,9 +104,11 @@ def _format_assigned_node_lines_from_per_op_outcomes(
             continue
         if outcome.get("assigned_node_id") is None:
             continue
+        from .id_display import format_node_id_for_display
         formatted_lines.append(
-            f"{outcome['assigned_node_parent_id']}>"
-            f"{outcome['assigned_node_id']}: {outcome['assigned_node_title']}"
+            f"{format_node_id_for_display(outcome['assigned_node_parent_id'])}>"
+            f"{format_node_id_for_display(outcome['assigned_node_id'])}: "
+            f"{outcome['assigned_node_title']}"
         )
     return formatted_lines
 
@@ -136,9 +157,11 @@ class RequirementsTreeControlledApi:
         node = tree.nodes_by_id.get(str(node_id))
         if node is None:
             return None
+        cited_text = self._resolve_cited_text_or_placeholder(node)
         result: dict[str, Any] = {
             "node": node.to_json_dict(),
-            "cited_text": self._resolve_cited_text_or_placeholder(node),
+            "cited_text": cited_text,
+            "display": _format_node_display_line(node, cited_text),
             "agent_guidance": self._effective_interaction_guidance(),
         }
         if include_children:
@@ -157,7 +180,9 @@ class RequirementsTreeControlledApi:
         for node in tree.nodes_by_id.values():
             if node.raw_input_reference is None:
                 if any(query_lowered in p.lower() for p in node.project_paths):
-                    matches.append(node.to_json_dict())
+                    match_payload = node.to_json_dict()
+                    match_payload["display"] = _format_node_display_line(node, None)
+                    matches.append(match_payload)
                 continue
             try:
                 quote_text = resolve_quote_text_from_reference(
@@ -172,6 +197,7 @@ class RequirementsTreeControlledApi:
             if query_lowered in quote_text.lower():
                 match_payload = node.to_json_dict()
                 match_payload["cited_text"] = quote_text  # show WHAT matched, not just the pointer
+                match_payload["display"] = _format_node_display_line(node, quote_text)
                 matches.append(match_payload)
         return {"matches": matches, "agent_guidance": self._effective_interaction_guidance()}
 
