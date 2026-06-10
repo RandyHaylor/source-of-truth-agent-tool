@@ -17,6 +17,8 @@ Runtime verbs (the agent calls these; project comes from the session):
   show-tree                 [--show-all]
   read                      <node_id> [<node_id> ...]
   search-nodes              <query>
+  list-raw                  (list raw-log entries: raw-<id>: first 30 chars)
+  read-raw                  <raw_input_id>   (print one raw-log entry in full)
   pretext                   <node_id> <start> <end> | --all | --none
   flush-deferred
   add-path                  <filesystem_path>
@@ -606,6 +608,74 @@ def _handle_search_nodes(argv: list[str]) -> int:
     return 0
 
 
+_LIST_RAW_PREVIEW_CHAR_LIMIT = 30
+
+
+def _handle_list_raw(argv: list[str]) -> int:
+    """List every raw-log entry as `raw-<id>: <first 30 chars>` so the agent can
+    see what has been captured and decide which to file."""
+    project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+    if rest:
+        print("Usage: source-of-truth list-raw", file=sys.stderr)
+        return 2
+    from .id_display import format_raw_input_id_for_display
+    from .raw_input_log_reader import list_all_raw_log_entries_for_project
+
+    rows = list_all_raw_log_entries_for_project(project_id)
+    if not rows:
+        print("(no raw input log entries yet)")
+        return 0
+    for raw_input_id, _session_id, entry in rows:
+        single_line = " ".join((entry.submission_text or "").split())
+        preview = single_line[:_LIST_RAW_PREVIEW_CHAR_LIMIT]
+        if len(single_line) > _LIST_RAW_PREVIEW_CHAR_LIMIT:
+            preview += "…"
+        print(f"{format_raw_input_id_for_display(raw_input_id)}: {preview}")
+    return 0
+
+
+def _handle_read_raw(argv: list[str]) -> int:
+    """Print a single raw-log entry in full (submission + agent pre-text + timestamp)."""
+    project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
+    if error_message:
+        print(error_message, file=sys.stderr)
+        return 1
+    if len(rest) != 1:
+        print("Usage: source-of-truth read-raw <raw_input_id>", file=sys.stderr)
+        return 2
+    from .id_display import (
+        format_raw_input_id_for_display,
+        strip_raw_input_id_input_prefix,
+    )
+    from .raw_input_log_reader import (
+        RawLogEntryNotFoundError,
+        get_raw_log_entry_by_raw_input_id,
+    )
+
+    try:
+        raw_input_id = int(strip_raw_input_id_input_prefix(rest[0]))
+    except (TypeError, ValueError):
+        print(f"invalid raw input id: {rest[0]!r}", file=sys.stderr)
+        return 2
+    try:
+        entry = get_raw_log_entry_by_raw_input_id(project_id, raw_input_id)
+    except RawLogEntryNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    payload = {
+        "raw_input_id": format_raw_input_id_for_display(raw_input_id),
+        "timestamp_iso": entry.timestamp_iso,
+        "submission_text": entry.submission_text,
+        "pre_submission_content": entry.pre_submission_content,
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def _handle_flush_deferred(argv: list[str]) -> int:
     project_id, rest, error_message = _resolve_project_and_remaining_args(argv)
     if error_message:
@@ -769,6 +839,8 @@ _VERB_DISPATCH_TABLE = {
     "read": _handle_read,
     "get-node": _handle_read,  # legacy alias; remove in a future refactor
     "search-nodes": _handle_search_nodes,
+    "list-raw": _handle_list_raw,
+    "read-raw": _handle_read_raw,
     "pretext": _handle_pretext,
     "flush-deferred": _handle_flush_deferred,
     "add-path": _handle_add_path,
@@ -788,6 +860,8 @@ _VERB_ONE_LINER_DESCRIPTIONS = {
     "read": "Read one or more nodes by id (mixed leaf + group ok).",
     "get-node": "Alias for `read` (kept for backwards compatibility).",
     "search-nodes": "Search node titles + raw quotes by keyword.",
+    "list-raw": "List every raw-log entry as raw-<id>: <first 30 chars> (to see what was captured).",
+    "read-raw": "Print one raw-log entry in full by id: read-raw <raw_input_id>.",
     "pretext": "Set how much of a node's agent pre-text is cited: <node_id> <start> <end> | --all | --none.",
     "flush-deferred": "Apply queued submits in deferred mode (no-op otherwise).",
     "add-path": "Pin a filesystem path on a project's project-paths node.",

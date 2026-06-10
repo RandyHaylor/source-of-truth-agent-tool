@@ -29,6 +29,23 @@ def load_raw_log_for_project(project_id: str) -> dict[str, list[dict]]:
     return data
 
 
+def list_all_raw_log_entries_for_project(
+    project_id: str,
+) -> list[tuple[int, str, RawInputLogEntry]]:
+    """Every raw-log entry across all member sessions, sorted by raw_input_id
+    ascending. Returns (raw_input_id, session_id, entry) tuples."""
+    log_data = load_raw_log_for_project(project_id)
+    rows: list[tuple[int, str, RawInputLogEntry]] = []
+    for session_id, session_entries in log_data.items():
+        if not isinstance(session_entries, list):
+            continue
+        for raw_entry in session_entries:
+            raw_input_id = int(raw_entry.get("raw_input_id", -1))
+            rows.append((raw_input_id, session_id, RawInputLogEntry.from_json_dict(raw_entry)))
+    rows.sort(key=lambda row: row[0])
+    return rows
+
+
 def get_raw_log_entry_by_raw_input_id(
     project_id: str, raw_input_id: int
 ) -> RawInputLogEntry:

@@ -229,6 +229,8 @@ source-of-truth set-mode           live|none|deferred
 source-of-truth show-tree          [--show-all]
 source-of-truth read               <node_id> [<node_id> ...]
 source-of-truth search-nodes       <query>
+source-of-truth list-raw           # raw-<id>: first 30 chars of each captured input
+source-of-truth read-raw           <raw_input_id>   # one raw-log entry in full
 source-of-truth pretext            <node_id> <start> <end> | --all | --none
 source-of-truth add-path           <filesystem_path>
 source-of-truth show-top-level

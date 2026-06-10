@@ -90,6 +90,8 @@ source-of-truth show-tree              # default: indented "<id> <title>" only
 source-of-truth show-tree --show-all   # add inlined raw quote text for top 2 levels
 source-of-truth read <id> [<id> ...]   # mixed leaf + group ids
 source-of-truth search-nodes <query>
+source-of-truth list-raw               # raw-<id>: first 30 chars of each captured input (review what to file)
+source-of-truth read-raw <raw_input_id> # one raw entry in full (submission + agent pre-text)
 ```
 
 JSON form is still available for multi-op change-sets (`submit-change-set '<json>'` or `@file.json` or `-` for stdin). See `README.md` for the full op schema (add, add_group, reparent, remove, modify_reference, reorder_children).
