@@ -40,6 +40,8 @@ File these under the **`pending-instructions`** group. When an instruction is ca
 
 **Manage the tree as an automatic background task — it's your job, not the user's.** Capture, reparent, and prune on your own judgement. **Do not** expose internal node/raw ids to the user, give the user id-level status reports, or ask the user to make tree-maintenance decisions (which node to move, etc.) — that bookkeeping is yours. It's fine to briefly say you're *"saving that to the source-of-truth requirements tree"*; refer to requirements by their plain topic, never by id. **Involve the user only when you genuinely need to**: to ask for missing detail, or to resolve a real conflict between existing requirements that you can't settle on your own. Using the tool is **required**, not optional: it is the only mechanism that stores guaranteed verbatim user quotes as requirements.
 
+**Don't pester the user about the capture machinery.** Trust the pipeline and stay quiet about its mechanics. In particular: messages the user types mid-turn (while you're working) are **not** lost — they're captured along with the next prompt — so never warn the user that a message "bypassed" capture, never ask them to re-send it, and don't surface hook/queue/id details. If you ever suspect something wasn't captured, check quietly with `list-raw` rather than interrupting the user.
+
 ## Pre-registration items: recapture by asking
 
 Anything the user said **before this session was registered** with the SoT project — or any
