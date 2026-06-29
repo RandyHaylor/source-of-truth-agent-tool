@@ -26,7 +26,7 @@ Goal: take the user from *hooks installed* → *project registered, mode picked,
 
 ## MUST-CAPTURE rule
 
-Any prompt that is an **explicit instruction, decision, or answer** is a requirement and MUST be stored — *before* you act on it. This includes:
+**Not everything is captured.** A question, discussion, brainstorming, or thinking-aloud is **NOT** a requirement — do not file it. But every prompt that **is** an **explicit instruction, decision, request, or answer** is a requirement and MUST be stored — *before* you act on it. This includes:
 - direct commands ("do X", "add Y", "remove Z")
 - dependency/choice statements ("use library Y", "make it blue", "put it top-right")
 - answers to a question you asked ("yes", "no", "option B")
@@ -36,7 +36,20 @@ Any prompt that is an **explicit instruction, decision, or answer** is a require
 
 File these under the **`pending-instructions`** group. When an instruction is carried out, reparent it to **`completed-instructions`**; when it's dropped/superseded, reparent it to **`deprecated-instructions`**. Capturing is not optional and not deferred until after the task — store first, then do the work.
 
+**MAINTAIN — prune conflicts after every addition.** Capture is not only additive. After you add a requirement, **review the existing tree for conflicts**: if the new prompt supersedes, changes, or contradicts an existing requirement node, **reparent that now-stale node to `deprecated-instructions`** (or `remove` it) so the tree holds **only current, non-conflicting truth**. These structural ops auto-approve — just notify the user in one line. A tree that only ever grows drifts from reality; keeping it pruned is part of the per-turn duty.
+
 **You manage this tree — you don't ask permission to use it.** Add, reparent, and re-cite on your own judgement. When you move a node to `completed-instructions` or `deprecated-instructions`, just **notify** the user in one line (e.g. "Moved 'vendor placement' to completed-instructions") — no approval needed. Using the tool is **required**, not optional: it is the only mechanism that stores guaranteed verbatim user quotes as requirements. You have no other tool that does this.
+
+## Pre-registration items: recapture by asking
+
+Anything the user said **before this session was registered** with the SoT project — or any
+instruction that never reached the raw log (e.g. plan-mode / tool-rejection feedback, messages
+sent before enrollment) — has **no `raw_input_id`**, so it cannot be cited. Do **not** fabricate
+a node for it and do **not** paraphrase it into the tree. The procedure is: **ask the user a
+question** that re-elicits the instruction. Their reply is auto-logged with a fresh
+`raw_input_id` (an `AskUserQuestion` answer is auto-captured the same way), so you can then file
+that captured reply under `pending-instructions` and act on it. In short: if it wasn't captured,
+re-ask so it gets captured, then use the captured quote.
 
 ## Expected workflow (each user turn)
 

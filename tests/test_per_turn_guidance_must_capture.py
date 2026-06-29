@@ -16,8 +16,14 @@ def test_guidance_names_must_capture_and_pending_instructions_group_id():
 
     guidance = cli_entrypoint._build_per_turn_additional_context_line(project_id, raw_input_id=7)
 
-    assert "MUST-CAPTURE" in guidance
     assert "pending-instructions" in guidance
+    # Capture test leads (not file-everything): questions are not requirements.
+    assert "CAPTURE TEST" in guidance
+    assert "NOT a requirement" in guidance
+    assert "ONLY if" in guidance
+    # Standing prune/maintain duty: review for conflicts, deprecate stale nodes.
+    assert "MAINTAIN" in guidance
+    assert "supersedes" in guidance
     # Points at the real group id (nd- prefixed) and the correct raw_input_id.
     assert f"--add 7 --parent nd-{pending_id}" in guidance
     assert "completed-instructions" in guidance

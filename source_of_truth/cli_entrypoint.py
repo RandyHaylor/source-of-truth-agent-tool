@@ -99,19 +99,20 @@ def _build_per_turn_additional_context_line(project_id: str, raw_input_id: int) 
     )
     return (
         f"source-of-truth: prompt logged raw-{raw_input_id}. "
-        f"MUST-CAPTURE -- if this prompt is an instruction, decision, or answer to an "
-        f"agent's requirement/task question (e.g. 'do X', 'use library Y', 'make it blue', "
-        f"'yes', 'option B'), it IS a requirement: store it under pending-instructions before "
-        f"acting on it: "
+        f"CAPTURE TEST (not everything is filed): a question, discussion, or thinking-aloud is NOT a requirement -- do not file it. "
+        f"ONLY if this prompt is an instruction, decision, request, or answer (e.g. 'do X', 'use library Y', 'make it blue', "
+        f"'yes', 'option B') is it a requirement you MUST capture -- store it under pending-instructions before acting on it: "
         f"source-of-truth submit-change-set --add {raw_input_id} --parent {pending_parent} "
         f"--title \"<noun-phrase TOPIC, 1-50 chars, NOT a sentence>\". "
-        f"You MANAGE this tree -- don't ask permission to add/reparent; when you reparent a node to "
-        f"completed-instructions / deprecated-instructions (when done or dropped) just NOTIFY the user in one line. "
+        f"MAINTAIN -- after capturing, review for conflicts: if this requirement supersedes, changes, or contradicts an existing "
+        f"requirement node, reparent the now-stale node to deprecated-instructions (or remove it) so the tree holds ONLY current, "
+        f"non-conflicting truth. "
+        f"You MANAGE this tree -- don't ask permission to add/reparent/prune; when you move a node to "
+        f"completed-instructions / deprecated-instructions just NOTIFY the user in one line. "
         f"Using this tool is REQUIRED: it is your only way to store guaranteed verbatim user quotes as requirements. "
-        f"(AskUserQuestion answers are auto-captured the same way -- you'll get their raw-ids in a PostToolUse note. "
-        f"Ids display as nd-<node> / raw-<input>; commands accept either prefixed or bare.) "
+        f"(AskUserQuestion answers are auto-captured the same way; ids display as nd-<node> / raw-<input>, accept prefixed or bare.) "
         f"Other content: file under the best-fit group (parent = a group node id, or '0' for top-level). "
-        f"view: source-of-truth show-tree, read SKILL.md for more"
+        f"view: source-of-truth show-tree, list-raw; read SKILL.md for more"
     )
 
 
