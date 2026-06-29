@@ -28,7 +28,10 @@ def test_guidance_names_must_capture_and_pending_instructions_group_id():
     assert f"--add 7 --parent nd-{pending_id}" in guidance
     assert "completed-instructions" in guidance
     assert "deprecated-instructions" in guidance
-    # Manage-don't-ask + notify-on-move + tool-is-required policy.
+    # Manage as an automatic background task: no id-chatter, no asking the user
+    # to do bookkeeping; involve the user only for detail/conflict resolution.
     assert "MANAGE" in guidance
-    assert "NOTIFY" in guidance
+    assert "automatic background task" in guidance
+    assert "Do NOT expose node/raw ids" in guidance
+    assert "conflict between existing requirements" in guidance
     assert "REQUIRED" in guidance
