@@ -144,6 +144,40 @@ def _extract_pre_text_from_transcript_for_prompt(
         return ""
 
 
+def _backfill_user_messages_sent_while_agent_was_working(
+    project_id: str,
+    session_id: str,
+    transcript_path: "str | None",
+    incoming_prompt_text: str,
+) -> None:
+    """Append raw-log entries for any user messages sent WHILE THE AGENT WAS WORKING
+    that never got their own capture -- the messages between the PREVIOUS normal
+    submission and this one (see the gap-anchored extractor). Appended in order, each
+    with empty pre-text (there is no per-message prior-agent turn to attribute). No-op
+    when the transcript is unavailable or nothing was missed."""
+    if not transcript_path:
+        return
+    from pathlib import Path
+
+    from . import claude_cli_get_recent_agent_messages as extractor
+
+    transcript_file = Path(transcript_path)
+    if not transcript_file.exists():
+        return
+
+    events = list(extractor.parse_events(transcript_file))
+    missed_messages = extractor.find_user_messages_sent_while_agent_was_working(
+        events, incoming_prompt_text
+    )
+    for missed_message_text in missed_messages:
+        append_submission_to_raw_input_log(
+            project_id=project_id,
+            session_id=session_id,
+            submission_text=missed_message_text,
+            prior_assistant_output_text="",
+        )
+
+
 def _handle_user_prompt_submit_hook() -> int:
     try:
         hook_input = json.loads(sys.stdin.read() or "{}")
@@ -173,6 +207,21 @@ def _handle_user_prompt_submit_hook() -> int:
     prior_assistant_output_text = _extract_pre_text_from_transcript_for_prompt(
         transcript_path, submission_text
     )
+
+    # LOOK-BEHIND: back-fill any user messages sent WHILE THE AGENT WAS WORKING
+    # (promptSource=="queued") that were never captured -- the messages that arrived
+    # between two normal submissions. They are appended BEFORE the current prompt so
+    # they keep their chronological raw_input_ids. Best-effort: any failure here must
+    # never block capturing the current prompt.
+    try:
+        _backfill_user_messages_sent_while_agent_was_working(
+            project_id=project_id,
+            session_id=session_id,
+            transcript_path=transcript_path,
+            incoming_prompt_text=submission_text,
+        )
+    except Exception:
+        pass
 
     log_result = append_submission_to_raw_input_log(
         project_id=project_id,

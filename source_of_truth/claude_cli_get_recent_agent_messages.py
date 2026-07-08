@@ -438,6 +438,80 @@ def _genuine_user_prompt_text(event: dict) -> str:
     return ""
 
 
+# A message the user types WHILE THE AGENT IS WORKING is recorded in the transcript
+# as a ``queued_command`` ATTACHMENT event (NOT a type=="user" prompt event), because
+# it does not fire its own UserPromptSubmit hook. Its human-typed variety carries
+# commandMode=="prompt" and origin.kind=="human"; task-notifications reuse the same
+# attachment shape but with commandMode=="task-notification" and are excluded.
+def _is_human_queued_command_attachment(event: dict) -> bool:
+    if event.get("type") != "attachment":
+        return False
+    attachment = event.get("attachment") or {}
+    if attachment.get("type") != "queued_command":
+        return False
+    if attachment.get("commandMode") != "prompt":
+        return False
+    return (attachment.get("origin") or {}).get("kind") == "human"
+
+
+def _queued_command_attachment_text(event: dict) -> str:
+    return ((event.get("attachment") or {}).get("prompt")) or ""
+
+
+def find_user_messages_sent_while_agent_was_working(
+    events: list[dict],
+    incoming_prompt_text: str,
+) -> list[str]:
+    """GAP-ANCHORED look-behind: return the texts of human messages the user sent
+    WHILE THE AGENT WAS WORKING that were never captured -- the messages between the
+    PREVIOUS normal submission and this one.
+
+    The reliable fact (the user's stated approach): a message sent while the agent is
+    working does NOT fire its own UserPromptSubmit hook, so it is never logged; but the
+    hook DOES fire on every normal submission (that is what runs this code). So we
+    anchor on the previous normal submission's position in the transcript (the previous
+    genuine user prompt) and collect the human ``queued_command`` attachments that fall
+    AFTER it and before the incoming prompt. Scoping to this single gap means we never
+    rescan old history (including a forked transcript's pre-fork messages), so there is
+    no cross-session duplication -- this is deliberately NOT a content-dedup approach.
+
+    The incoming prompt itself is excluded (the caller logs it through the normal path).
+    """
+    incoming_stripped = (incoming_prompt_text or "").strip()
+    genuine_prompt_indices = [
+        index for index, event in enumerate(events) if _is_genuine_user_prompt(event)
+    ]
+
+    # Anchor = the PREVIOUS normal submission's position; window ends at the incoming.
+    if (
+        genuine_prompt_indices
+        and _genuine_user_prompt_text(events[genuine_prompt_indices[-1]]).strip()
+        == incoming_stripped
+    ):
+        # The incoming prompt is already appended as the last genuine prompt: the gap
+        # is between the one-before-last genuine prompt and it.
+        anchor_index = (
+            genuine_prompt_indices[-2] if len(genuine_prompt_indices) >= 2 else -1
+        )
+        window_end_index = genuine_prompt_indices[-1]
+    else:
+        # The incoming prompt is not yet appended: the gap runs from the last genuine
+        # prompt to the end of the transcript.
+        anchor_index = genuine_prompt_indices[-1] if genuine_prompt_indices else -1
+        window_end_index = len(events)
+
+    messages_to_backfill: list[str] = []
+    for event in events[anchor_index + 1 : window_end_index]:
+        if not _is_human_queued_command_attachment(event):
+            continue
+        queued_text = _queued_command_attachment_text(event)
+        # Never back-fill the incoming prompt itself (it may be a queued message being
+        # consumed as THIS submission; the normal path logs it).
+        if queued_text.strip() and queued_text.strip() != incoming_stripped:
+            messages_to_backfill.append(queued_text)
+    return messages_to_backfill
+
+
 def build_pre_text_for_incoming_user_prompt(
     events: list[dict],
     incoming_prompt_text: str,
