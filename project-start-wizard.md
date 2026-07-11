@@ -16,15 +16,15 @@ Then ask: "ready to register your current Claude Code session as a source-of-tru
 
 ## Step 1 — Find the current session_id
 
-**Reliable way — ask the install's built-in hook.** Install deploys a sentinel file whose name is the trigger string, so any tool call that references it makes the `what-is-session-id` PostToolUse hook print the live session id. Just read it:
+**Reliable way — read the environment variable.** The live session id is available to this session's shell, so read it directly:
 
 ```bash
-cat ~/.claude/skills/source-of-truth-agent-tool/WhatIsTheCurrentSessionId.txt
+printenv CLAUDE_CODE_SESSION_ID
 ```
 
-You'll then see a line like `Current session id: <id>` surfaced by the hook. That's the real, current session — use it directly, no guessing.
+That prints the real, current session id — use it directly, no guessing. (This works *before* registration; the `what-is-session-id` sentinel hook is gated on project membership like every other SoT hook, so it only responds once the session is already enrolled — it's a post-registration confirmation, not a bootstrap.)
 
-**Fallback** (only if the hook doesn't fire — e.g. hooks not loaded in this session): list recent transcripts and confirm the right one with the user.
+**Fallback** (only if the env var is empty): list recent transcripts under `~/.claude/projects/<encoded-cwd>/` and confirm the right `<session_id>.jsonl` with the user.
 
 ```bash
 ls -lt ~/.claude/projects/<encoded-cwd>/*.jsonl | head -5
