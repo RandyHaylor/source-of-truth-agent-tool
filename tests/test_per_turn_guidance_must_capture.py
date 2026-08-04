@@ -19,8 +19,11 @@ def test_guidance_names_must_capture_and_pending_instructions_group_id():
     assert "pending-instructions" in guidance
     # Capture test leads (not file-everything): questions are not requirements.
     assert "CAPTURE TEST" in guidance
-    assert "NOT a requirement" in guidance
+    assert "NOT requirements" in guidance
     assert "ONLY if" in guidance
+    # Confirm-vague-first + nest-refinements-as-children (working-memory usage).
+    assert "is it this: xyz" in guidance
+    assert "CHILD" in guidance
     # Standing prune/maintain duty: review for conflicts, deprecate stale nodes.
     assert "MAINTAIN" in guidance
     assert "supersedes" in guidance

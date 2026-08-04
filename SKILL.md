@@ -26,11 +26,13 @@ Goal: take the user from *hooks installed* → *project registered, mode picked,
 
 ## MUST-CAPTURE rule
 
-**Not everything is captured.** A question, discussion, brainstorming, or thinking-aloud is **NOT** a requirement — do not file it. But every prompt that **is** an **explicit instruction, decision, request, or answer** is a requirement and MUST be stored — *before* you act on it. This includes:
+**Not everything is captured.** A question, discussion, brainstorming, or thinking-aloud is **NOT** a requirement — do not file it. Also not requirements: your own corrections, the user correcting your reasoning, and notes about your own drafts. But a **settled** instruction, decision, request, or answer **is** a requirement and must be stored — *before* you act on it. This includes:
 - direct commands ("do X", "add Y", "remove Z")
 - dependency/choice statements ("use library Y", "make it blue", "put it top-right")
 - answers to a question you asked ("yes", "no", "option B")
 - **answers to an `AskUserQuestion` multiple-choice prompt** — these are auto-captured too (see below), so a `raw_input_id` is waiting for you to file
+
+**Not every statement needs a node — confirm vague ones first.** When a prompt is vague, partial, or one step in a discussion still taking shape, don't file it — ask a confirming question instead: *"is it this: xyz?"* Their reply becomes the node, and the pre-text carries your xyz, so a one-word "yes" is a complete, precise requirement — the original prompt needs no node of its own. Because the substance then sits in **your** restatement, make xyz **precise and narrow**: a loose restatement plus a casual "yes" puts your overreach into the tree with the user's endorsement on it.
 
 **`AskUserQuestion` answers are auto-logged.** When the user submits answers to an `AskUserQuestion` prompt, a `PostToolUse` hook records **one `raw_input_id` per question** (the selected label, comma-joined labels for multi-select, or the verbatim "Other" text) and hands you those ids back in `additionalContext`. These are explicit user decisions — file each under `pending-instructions` (or the fitting group) just like a typed prompt. (A dismissed/unanswered prompt logs nothing.)
 
@@ -56,7 +58,7 @@ re-ask so it gets captured, then use the captured quote.
 ## Expected workflow (each user turn)
 
 1. The user sends a prompt; it's auto-logged and you receive its `raw_input_id` in your turn context.
-2. If it's an instruction/decision/answer, file it under `pending-instructions`; otherwise file it under the fitting group: `submit-change-set --add <raw_input_id> --parent <group> --title "<subject>"`
+2. If it's a settled instruction/decision/answer, file it under `pending-instructions` — **unless it refines a requirement already in the tree, in which case file it as a child of that node instead.** Otherwise file it under the fitting group: `submit-change-set --add <raw_input_id> --parent <parent> --title "<subject>"`
 3. The reviewer approves (or rejects with a reason — fix and resubmit).
 4. `read <node_id>` → the verbatim quote + line-numbered pre-text.
 5. Trim if noisy: `pretext <node_id> <start> <end> | --all | --none`.
@@ -77,7 +79,7 @@ Do NOT dump all instructions at once. Walk the user step by step. After each ste
 
 Capture via the on-PATH `source-of-truth` wrapper. Three rules:
 
-1. **Every node has a parent.** `parent_id` is required on every `add` op. Use `"0"` for top-level only when no appropriate parent exists. Prefer organizing under a group node (letter id like `a`, `b`, `aa`).
+1. **Every node has a parent.** `parent_id` is required on every `add` op. Use `"0"` for top-level only when no appropriate parent exists. Prefer organizing under a group node (letter id like `a`, `b`, `aa`). When a prompt adds to, narrows, or corrects a requirement already filed, its parent is **that requirement's node** — a refinement belongs *beneath what it refines*, not beside it as a new sibling.
 2. **Every node has a title.** `short_neutral_title` is required, 1–50 chars, the SUBJECT of the requirement (not the spec). The reviewer will rewrite (via `amended_short_title`) if a title overreaches the cited slice; ops aren't rejected for that.
 3. **Node ids vs raw input ids.** Tree **node ids** display as `nd-<id>` (e.g. `nd-2`, `nd-e`); raw-log **input ids** display as `raw-<id>` (e.g. `raw-22`). Every id argument accepts either the prefixed or the bare form (`--parent nd-c` ≡ `--parent c`; `--add raw-7` ≡ `--add 7`); it's stripped to the bare canonical id and stored bare. Tree operations are **node-id-only** — never operate on a node by its raw input id.
 4. **Group nodes organize the tree.** `add_group` op (or the combo shortcut) creates a group with auto-allocated letter id. New projects start **pre-scaffolded** with seven top-level groups — `resources` (links/paths/docs the user supplies), `user-interaction-preferences`, `technical-requirements`, `current-project-documentation`, and the instruction-lifecycle groups `pending-instructions`, `completed-instructions`, `deprecated-instructions` — so file new nodes under the fitting one (add more groups as needed).

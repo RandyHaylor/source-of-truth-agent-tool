@@ -99,9 +99,11 @@ def _build_per_turn_additional_context_line(project_id: str, raw_input_id: int) 
     )
     return (
         f"source-of-truth: prompt logged raw-{raw_input_id}. "
-        f"CAPTURE TEST (not everything is filed): a question, discussion, or thinking-aloud is NOT a requirement -- do not file it. "
-        f"ONLY if this prompt is an instruction, decision, request, or answer (e.g. 'do X', 'use library Y', 'make it blue', "
-        f"'yes', 'option B') is it a requirement you MUST capture -- store it under pending-instructions before acting on it: "
+        f"CAPTURE TEST (not everything is filed): a question, discussion, thinking-aloud, or your own corrections are NOT requirements -- do not file them. "
+        f"If the prompt is vague or mid-discussion, don't file it -- ask 'is it this: xyz?' and file THEIR reply instead (make xyz precise and narrow). "
+        f"ONLY if this prompt is a settled instruction, decision, request, or answer (e.g. 'do X', 'use library Y', 'make it blue', "
+        f"'yes', 'option B') is it a requirement you MUST capture -- store it before acting on it. "
+        f"If it REFINES a requirement already in the tree, file it as a CHILD of that node (its parent is that requirement's node), NOT a new sibling under pending-instructions: "
         f"source-of-truth submit-change-set --add {raw_input_id} --parent {pending_parent} "
         f"--title \"<noun-phrase TOPIC, 1-50 chars, NOT a sentence>\". "
         f"MAINTAIN -- after capturing, review for conflicts: if this requirement supersedes, changes, or contradicts an existing "
