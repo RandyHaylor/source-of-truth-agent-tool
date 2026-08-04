@@ -17,10 +17,10 @@ def test_guidance_names_must_capture_and_pending_instructions_group_id():
     guidance = cli_entrypoint._build_per_turn_additional_context_line(project_id, raw_input_id=7)
 
     assert "pending-instructions" in guidance
-    # Capture test leads (not file-everything): questions are not requirements.
-    assert "CAPTURE TEST" in guidance
-    assert "NOT requirements" in guidance
-    assert "ONLY if" in guidance
+    # Judgement-not-checklist framing; corrections/notes not excluded outright.
+    assert "living project doc" in guidance
+    assert "corrections and notes CAN be requirements" in guidance
+    assert "MUST capture" in guidance
     # Confirm-vague-first + nest-refinements-as-children (working-memory usage).
     assert "is it this: xyz" in guidance
     assert "CHILD" in guidance
